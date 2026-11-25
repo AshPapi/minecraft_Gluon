@@ -10,41 +10,77 @@ import org.spongepowered.asm.mixin.Unique;
 @Mixin(value = VarInt.class, priority = 1500)
 public abstract class VarIntMixin {
 
-    @Unique
-    private static final int[] PAPI$VARINT_LENGTHS = new int[33];
-
-    static {
-        for (int i = 0; i <= 32; i++) {
-            int bits = 32 - i;
-            PAPI$VARINT_LENGTHS[i] = bits == 0 ? 1 : (bits + 6) / 7;
-        }
-    }
-
     @WrapMethod(method = "getByteSize")
     private static int papi$fastGetByteSize(int value, Operation<Integer> original) {
-        return PAPI$VARINT_LENGTHS[Integer.numberOfLeadingZeros(value)];
+        return (1406 - Integer.numberOfLeadingZeros(value | 1) * 37) >>> 8;
+    }
+
+    @WrapMethod(method = "read")
+    private static int papi$fastRead(ByteBuf buf, Operation<Integer> original) {
+        byte b0 = buf.readByte();
+        if (b0 >= 0) {
+            return b0;
+        }
+        int result = b0 & 0x7F;
+        byte b1 = buf.readByte();
+        if (b1 >= 0) {
+            return result | (b1 << 7);
+        }
+        result |= (b1 & 0x7F) << 7;
+        byte b2 = buf.readByte();
+        if (b2 >= 0) {
+            return result | (b2 << 14);
+        }
+        result |= (b2 & 0x7F) << 14;
+        byte b3 = buf.readByte();
+        if (b3 >= 0) {
+            return result | (b3 << 21);
+        }
+        result |= (b3 & 0x7F) << 21;
+        byte b4 = buf.readByte();
+        if (b4 >= 0) {
+            return result | (b4 << 28);
+        }
+        throw new RuntimeException("VarInt too big");
     }
 
     @WrapMethod(method = "write")
     private static ByteBuf papi$fastWrite(ByteBuf buf, int value, Operation<ByteBuf> original) {
-        if ((value & (0xFFFFFFFF << 7)) == 0) {
+        if ((value & ~0x7F) == 0) {
             buf.writeByte(value);
-        } else if ((value & (0xFFFFFFFF << 14)) == 0) {
-            int w = (value & 0x7F | 0x80) << 8 | (value >>> 7);
-            buf.writeShort(w);
-        } else if ((value & (0xFFFFFFFF << 21)) == 0) {
-            int w = (value & 0x7F | 0x80) << 16 | ((value >>> 7) & 0x7F | 0x80) << 8 | (value >>> 14);
-            buf.writeMedium(w);
-        } else if ((value & (0xFFFFFFFF << 28)) == 0) {
-            int w = (value & 0x7F | 0x80) << 24 | (((value >>> 7) & 0x7F | 0x80) << 16)
-                    | (((value >>> 14) & 0x7F | 0x80) << 8) | (value >>> 21);
-            buf.writeInt(w);
+            return buf;
+        }
+        if ((value & ~0x3FFF) == 0) {
+            buf.writeShortLE((value & 0x7F) | 0x80 | ((value & 0x3F80) << 1));
+            return buf;
+        }
+        papi$writeLargeVarInt(buf, value);
+        return buf;
+    }
+
+    @Unique
+    private static void papi$writeLargeVarInt(ByteBuf buf, int value) {
+        if ((value & ~0x1FFFFF) == 0) {
+            int encoded = (value & 0x7F)
+                    | ((value & 0x3F80) << 1)
+                    | ((value & 0x1FC000) << 2)
+                    | 0x008080;
+            buf.writeMediumLE(encoded);
+        } else if ((value & ~0x0FFFFFFF) == 0) {
+            int encoded = (value & 0x7F)
+                    | ((value & 0x3F80) << 1)
+                    | ((value & 0x1FC000) << 2)
+                    | ((value & 0x0FE00000) << 3)
+                    | 0x00808080;
+            buf.writeIntLE(encoded);
         } else {
-            int w = (value & 0x7F | 0x80) << 24 | ((value >>> 7) & 0x7F | 0x80) << 16
-                    | ((value >>> 14) & 0x7F | 0x80) << 8 | ((value >>> 21) & 0x7F | 0x80);
-            buf.writeInt(w);
+            int low = (value & 0x7F)
+                    | ((value & 0x3F80) << 1)
+                    | ((value & 0x1FC000) << 2)
+                    | ((value & 0x0FE00000) << 3)
+                    | 0x80808080;
+            buf.writeIntLE(low);
             buf.writeByte(value >>> 28);
         }
-        return buf;
     }
 }

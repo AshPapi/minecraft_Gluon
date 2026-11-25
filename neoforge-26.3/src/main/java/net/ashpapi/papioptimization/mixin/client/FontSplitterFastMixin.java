@@ -4,10 +4,13 @@ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.client.StringSplitter;
 import net.minecraft.network.chat.Style;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
+@OnlyIn(Dist.CLIENT)
 @Mixin(value = StringSplitter.class, priority = 1500)
 public abstract class FontSplitterFastMixin {
     @Shadow @Final private StringSplitter.WidthProvider widthProvider;

@@ -11,9 +11,17 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(value = Vec3.class, priority = 1500)
 public abstract class Vec3Mixin {
-    @Shadow @Final public double x;
-    @Shadow @Final public double y;
-    @Shadow @Final public double z;
+    @Shadow
+    @Final
+    public double x;
+
+    @Shadow
+    @Final
+    public double y;
+
+    @Shadow
+    @Final
+    public double z;
 
     @Inject(method = "normalize", at = @At("HEAD"), cancellable = true)
     private void papi$fastNormalize(CallbackInfoReturnable<Vec3> cir) {
@@ -52,7 +60,7 @@ public abstract class Vec3Mixin {
     private void papi$fastZeroScale(double factor, CallbackInfoReturnable<Vec3> cir) {
         if (factor == 1.0) {
             cir.setReturnValue((Vec3) (Object) this);
-        } else if (factor == 0.0) {
+        } else if (factor == 0.0 && Double.isFinite(this.x) && Double.isFinite(this.y) && Double.isFinite(this.z)) {
             cir.setReturnValue(Vec3.ZERO);
         }
     }
@@ -61,7 +69,8 @@ public abstract class Vec3Mixin {
     private void papi$fastZeroMultiply(double mx, double my, double mz, CallbackInfoReturnable<Vec3> cir) {
         if (mx == 1.0 && my == 1.0 && mz == 1.0) {
             cir.setReturnValue((Vec3) (Object) this);
-        } else if (mx == 0.0 && my == 0.0 && mz == 0.0) {
+        } else if (mx == 0.0 && my == 0.0 && mz == 0.0
+                && Double.isFinite(this.x) && Double.isFinite(this.y) && Double.isFinite(this.z)) {
             cir.setReturnValue(Vec3.ZERO);
         }
     }

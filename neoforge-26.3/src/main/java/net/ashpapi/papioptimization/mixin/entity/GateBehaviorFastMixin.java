@@ -1,6 +1,10 @@
 package net.ashpapi.papioptimization.mixin.entity;
 
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.RandomAccess;
+import java.util.Set;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.Brain;
@@ -19,10 +23,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 @Mixin(value = GateBehavior.class, priority = 1500)
 public abstract class GateBehaviorFastMixin<E extends LivingEntity> {
 
@@ -34,6 +34,7 @@ public abstract class GateBehaviorFastMixin<E extends LivingEntity> {
     @Shadow private Behavior.Status status;
 
     @Shadow protected abstract boolean hasRequiredMemories(E body);
+    @Shadow public abstract void doStop(ServerLevel level, E body, long timestamp);
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void papi$optimizeEntryConditionMap(CallbackInfo ci) {
@@ -51,14 +52,31 @@ public abstract class GateBehaviorFastMixin<E extends LivingEntity> {
         }
         this.status = Behavior.Status.RUNNING;
         this.orderPolicy.apply(this.behaviors);
+        GateBehavior.RunningPolicy policy = this.runningPolicy;
+        if (policy != GateBehavior.RunningPolicy.RUN_ONE && policy != GateBehavior.RunningPolicy.TRY_ALL) {
+            policy.apply(this.behaviors.stream(), level, body, timestamp);
+            cir.setReturnValue(true);
+            return;
+        }
         List<ShufflingList.WeightedEntry<BehaviorControl<? super E>>> entries =
                 ((ShufflingListAccessor<BehaviorControl<? super E>>) this.behaviors).papi$getEntries();
-        boolean runOne = this.runningPolicy == GateBehavior.RunningPolicy.RUN_ONE;
-        for (int i = 0, size = entries.size(); i < size; i++) {
-            BehaviorControl<? super E> behavior = entries.get(i).getData();
-            if (behavior.getStatus() == Behavior.Status.STOPPED) {
-                if (behavior.tryStart(level, body, timestamp) && runOne) {
-                    break;
+        boolean runOne = policy == GateBehavior.RunningPolicy.RUN_ONE;
+        if (entries instanceof RandomAccess) {
+            for (int i = 0, size = entries.size(); i < size; i++) {
+                BehaviorControl<? super E> behavior = entries.get(i).getData();
+                if (behavior.getStatus() == Behavior.Status.STOPPED) {
+                    if (behavior.tryStart(level, body, timestamp) && runOne) {
+                        break;
+                    }
+                }
+            }
+        } else {
+            for (ShufflingList.WeightedEntry<BehaviorControl<? super E>> entry : entries) {
+                BehaviorControl<? super E> behavior = entry.getData();
+                if (behavior.getStatus() == Behavior.Status.STOPPED) {
+                    if (behavior.tryStart(level, body, timestamp) && runOne) {
+                        break;
+                    }
                 }
             }
         }
@@ -71,12 +89,24 @@ public abstract class GateBehaviorFastMixin<E extends LivingEntity> {
         List<ShufflingList.WeightedEntry<BehaviorControl<? super E>>> entries =
                 ((ShufflingListAccessor<BehaviorControl<? super E>>) this.behaviors).papi$getEntries();
         boolean anyStillRunning = false;
-        for (int i = 0, size = entries.size(); i < size; i++) {
-            BehaviorControl<? super E> behavior = entries.get(i).getData();
-            if (behavior.getStatus() == Behavior.Status.RUNNING) {
-                behavior.tickOrStop(level, body, timestamp);
+        if (entries instanceof RandomAccess) {
+            for (int i = 0, size = entries.size(); i < size; i++) {
+                BehaviorControl<? super E> behavior = entries.get(i).getData();
                 if (behavior.getStatus() == Behavior.Status.RUNNING) {
-                    anyStillRunning = true;
+                    behavior.tickOrStop(level, body, timestamp);
+                    if (behavior.getStatus() == Behavior.Status.RUNNING) {
+                        anyStillRunning = true;
+                    }
+                }
+            }
+        } else {
+            for (ShufflingList.WeightedEntry<BehaviorControl<? super E>> entry : entries) {
+                BehaviorControl<? super E> behavior = entry.getData();
+                if (behavior.getStatus() == Behavior.Status.RUNNING) {
+                    behavior.tickOrStop(level, body, timestamp);
+                    if (behavior.getStatus() == Behavior.Status.RUNNING) {
+                        anyStillRunning = true;
+                    }
                 }
             }
         }
@@ -86,18 +116,25 @@ public abstract class GateBehaviorFastMixin<E extends LivingEntity> {
         ci.cancel();
     }
 
-    @Shadow public abstract void doStop(ServerLevel level, E body, long timestamp);
-
     @SuppressWarnings("unchecked")
     @Inject(method = "doStop", at = @At("HEAD"), cancellable = true)
     private void papi$fastDoStop(ServerLevel level, E body, long timestamp, CallbackInfo ci) {
         this.status = Behavior.Status.STOPPED;
         List<ShufflingList.WeightedEntry<BehaviorControl<? super E>>> entries =
                 ((ShufflingListAccessor<BehaviorControl<? super E>>) this.behaviors).papi$getEntries();
-        for (int i = 0, size = entries.size(); i < size; i++) {
-            BehaviorControl<? super E> behavior = entries.get(i).getData();
-            if (behavior.getStatus() == Behavior.Status.RUNNING) {
-                behavior.doStop(level, body, timestamp);
+        if (entries instanceof RandomAccess) {
+            for (int i = 0, size = entries.size(); i < size; i++) {
+                BehaviorControl<? super E> behavior = entries.get(i).getData();
+                if (behavior.getStatus() == Behavior.Status.RUNNING) {
+                    behavior.doStop(level, body, timestamp);
+                }
+            }
+        } else {
+            for (ShufflingList.WeightedEntry<BehaviorControl<? super E>> entry : entries) {
+                BehaviorControl<? super E> behavior = entry.getData();
+                if (behavior.getStatus() == Behavior.Status.RUNNING) {
+                    behavior.doStop(level, body, timestamp);
+                }
             }
         }
         Brain<?> brain = body.getBrain();

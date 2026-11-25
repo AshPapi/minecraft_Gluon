@@ -28,8 +28,13 @@ public final class PapiSodiumEbeBridge {
     private static final Logger LOGGER = LoggerFactory.getLogger("Gluon/SodiumEBE");
 
     private static final class MeshBatch {
+        final int epoch;
         final List<PapiEbeDynamicTracker> baked = new ArrayList<>(4);
         final List<PapiEbeDynamicTracker> unbaked = new ArrayList<>(4);
+
+        MeshBatch(int epoch) {
+            this.epoch = epoch;
+        }
 
         boolean isEmpty() {
             return this.baked.isEmpty() && this.unbaked.isEmpty();
@@ -53,14 +58,19 @@ public final class PapiSodiumEbeBridge {
 
     private PapiSodiumEbeBridge() {}
 
-    public static void beginMeshTask() {
+    public static void beginMeshTask(String backendName) {
         CURRENT_BATCH.remove();
+        if (!initialized) {
+            init(backendName);
+        } else if (ready && !"disabled".equals(backendName)) {
+            PapiEbeRuntime.markSectionCompilerHooked(backendName);
+        }
     }
 
     public static void finishMeshTask(@Nullable Object buildOutput) {
         MeshBatch batch = CURRENT_BATCH.get();
         CURRENT_BATCH.remove();
-        if (batch != null && !batch.isEmpty() && buildOutput != null) {
+        if (batch != null && !batch.isEmpty() && buildOutput != null && batch.epoch == PapiEbeRuntime.getReloadEpoch()) {
             PENDING_OUTPUTS.put(buildOutput, batch);
         }
     }
@@ -97,7 +107,8 @@ public final class PapiSodiumEbeBridge {
                     prev.get(i).papi$setEbeBaked(false);
                 }
             }
-        } else if (section != null) {
+        }
+        if (section != null) {
             List<PapiEbeDynamicTracker> prev = COMMITTED_BY_SECTION.remove(section);
             if (prev != null) {
                 for (int i = 0, n = prev.size(); i < n; i++) {
@@ -109,22 +120,30 @@ public final class PapiSodiumEbeBridge {
             return;
         }
         MeshBatch batch = PENDING_OUTPUTS.remove(buildOutput);
-        if (batch == null) {
+        if (batch == null || batch.epoch != PapiEbeRuntime.getReloadEpoch()) {
             return;
         }
+        List<PapiEbeDynamicTracker> liveBaked = null;
         for (int i = 0, n = batch.baked.size(); i < n; i++) {
-            batch.baked.get(i).papi$setEbeBaked(true);
+            PapiEbeDynamicTracker tracker = batch.baked.get(i);
+            PapiEbeRuntime.onCommittedBakedTracker(tracker);
+            if (tracker.papi$isEbeBaked()) {
+                if (liveBaked == null) {
+                    liveBaked = new ArrayList<>(n);
+                }
+                liveBaked.add(tracker);
+            }
         }
         for (int i = 0, n = batch.unbaked.size(); i < n; i++) {
             batch.unbaked.get(i).papi$setEbeBaked(false);
         }
-        if (!batch.baked.isEmpty()) {
+        if (liveBaked != null && !liveBaked.isEmpty()) {
             if (secKey != Long.MIN_VALUE) {
                 synchronized (COMMITTED_BY_POS) {
-                    COMMITTED_BY_POS.put(secKey, batch.baked);
+                    COMMITTED_BY_POS.put(secKey, liveBaked);
                 }
             } else if (section != null) {
-                COMMITTED_BY_SECTION.put(section, batch.baked);
+                COMMITTED_BY_SECTION.put(section, liveBaked);
             }
         }
     }
@@ -138,6 +157,23 @@ public final class PapiSodiumEbeBridge {
         if (prev != null) {
             for (int i = 0, n = prev.size(); i < n; i++) {
                 prev.get(i).papi$setEbeBaked(false);
+            }
+        }
+        if (!COMMITTED_BY_SECTION.isEmpty()) {
+            synchronized (COMMITTED_BY_SECTION) {
+                var it = COMMITTED_BY_SECTION.entrySet().iterator();
+                while (it.hasNext()) {
+                    var entry = it.next();
+                    if (extractSectionKey(entry.getKey()) == secKey) {
+                        List<PapiEbeDynamicTracker> list = entry.getValue();
+                        if (list != null) {
+                            for (int i = 0, n = list.size(); i < n; i++) {
+                                list.get(i).papi$setEbeBaked(false);
+                            }
+                        }
+                        it.remove();
+                    }
+                }
             }
         }
     }
@@ -169,7 +205,7 @@ public final class PapiSodiumEbeBridge {
     private static MeshBatch getOrCreateBatch() {
         MeshBatch batch = CURRENT_BATCH.get();
         if (batch == null) {
-            batch = new MeshBatch();
+            batch = new MeshBatch(PapiEbeRuntime.getReloadEpoch());
             CURRENT_BATCH.set(batch);
         }
         return batch;
@@ -249,7 +285,7 @@ public final class PapiSodiumEbeBridge {
                 return;
             }
             BlockEntity be = slice.getBlockEntity(blockPos);
-            if (be == null) {
+            if (be == null || !PapiEbeRuntime.isBakeableBlockEntity(be, blockState)) {
                 return;
             }
             PapiEbeDynamicTracker tracker = (be instanceof PapiEbeDynamicTracker t) ? t : null;

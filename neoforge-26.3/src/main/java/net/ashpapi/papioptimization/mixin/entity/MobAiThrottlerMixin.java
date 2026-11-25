@@ -8,9 +8,11 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.TamableAnimal;
 import net.minecraft.world.entity.ai.control.MoveControl;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
+import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.animal.allay.Allay;
 import net.minecraft.world.entity.animal.bee.Bee;
 import net.minecraft.world.entity.animal.golem.AbstractGolem;
+import net.minecraft.world.entity.monster.piglin.AbstractPiglin;
 import net.minecraft.world.entity.monster.warden.Warden;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.raid.Raider;
@@ -30,24 +32,45 @@ public abstract class MobAiThrottlerMixin extends LivingEntity {
         super(type, level);
     }
 
-    @Shadow public abstract LivingEntity getTarget();
-    @Shadow public abstract boolean isAggressive();
-    @Shadow public abstract PathNavigation getNavigation();
-    @Shadow public abstract MoveControl getMoveControl();
-    @Shadow public abstract boolean isPersistenceRequired();
-    @Shadow public abstract boolean requiresCustomPersistence();
+    @Shadow
+    public abstract LivingEntity getTarget();
+
+    @Shadow
+    public abstract boolean isAggressive();
+
+    @Shadow
+    public abstract PathNavigation getNavigation();
+
+    @Shadow
+    public abstract MoveControl getMoveControl();
+
+    @Shadow
+    public abstract boolean isPersistenceRequired();
+
+    @Shadow
+    public abstract boolean requiresCustomPersistence();
 
     @Unique
-    private byte papi$isVanillaMob = 0;
+    private byte papi$mobFlags = 0;
 
+    @SuppressWarnings("deprecation")
     @Inject(method = "serverAiStep", at = @At("HEAD"), cancellable = true)
     private void papi$adaptiveAiThrottling(CallbackInfo ci) {
-        byte vanillaState = this.papi$isVanillaMob;
-        if (vanillaState == 0) {
-            vanillaState = this.getClass().getName().startsWith("net.minecraft.") ? (byte) 1 : (byte) 2;
-            this.papi$isVanillaMob = vanillaState;
+        int interval = PapiMsptController.getAiThrottleInterval();
+        if (interval <= 1 || Math.floorMod(this.tickCount + this.getId(), interval) == 0) {
+            return;
         }
-        if (vanillaState != 1) return;
+
+        byte flags = this.papi$mobFlags;
+        if (flags == 0) {
+            boolean eligible = this.getClass().getName().startsWith("net.minecraft.")
+                    && !this.getType().builtInRegistryHolder().is(Tags.EntityTypes.BOSSES);
+            flags = eligible ? (byte) 1 : (byte) 2;
+            this.papi$mobFlags = flags;
+        }
+        if (flags != 1) {
+            return;
+        }
 
         if ((Object) this instanceof AbstractVillager
                 || (Object) this instanceof Raider
@@ -55,40 +78,50 @@ public abstract class MobAiThrottlerMixin extends LivingEntity {
                 || (Object) this instanceof AbstractGolem
                 || (Object) this instanceof Bee
                 || (Object) this instanceof Allay
-                || ((Object) this instanceof TamableAnimal tamable && tamable.isTame())) {
+                || (Object) this instanceof AbstractPiglin
+                || ((Object) this instanceof TamableAnimal tamable && tamable.isTame())
+                || ((Object) this instanceof Animal animal && animal.isInLove())) {
             return;
         }
-        @SuppressWarnings("deprecation")
-        boolean isBoss = this.getType().builtInRegistryHolder().is(Tags.EntityTypes.BOSSES);
-        if (isBoss) {
+
+        if (this.isPersistenceRequired() || this.requiresCustomPersistence() || ((Leashable) (Object) this).isLeashed()) {
             return;
         }
-        if (this.isPersistenceRequired() || this.requiresCustomPersistence() || ((Leashable) (Object) this).isLeashed()) return;
-        if (this.getTarget() != null || this.isAggressive()) return;
+        if (this.getTarget() != null || this.isAggressive()) {
+            return;
+        }
 
         PathNavigation nav = this.getNavigation();
-        if (nav != null && nav.isInProgress()) return;
-        if (this.getMoveControl().hasWanted()) return;
+        if (nav != null && nav.isInProgress()) {
+            return;
+        }
+        if (this.getMoveControl().hasWanted()) {
+            return;
+        }
 
-        if (this.hurtTime > 0 || this.getLastHurtByMob() != null) return;
-        if (this.isInWater() || this.isInLava()) return;
-        if (!this.onGround()) return;
-        if (this.isPassenger() || this.isVehicle()) return;
-        if (this.hasCustomName()) return;
-        if (this.isBaby()) return;
+        if (this.hurtTime > 0 || this.getLastHurtByMob() != null || this.isOnFire()) {
+            return;
+        }
+        if (this.isInWater() || this.isInLava()) {
+            return;
+        }
+        if (!this.onGround()) {
+            return;
+        }
+        if (this.isPassenger() || this.isVehicle()) {
+            return;
+        }
+        if (this.hasCustomName()) {
+            return;
+        }
+        if (this.isBaby()) {
+            return;
+        }
 
         if (this.level().hasNearbyAlivePlayer(this.getX(), this.getY(), this.getZ(), 16.0)) {
             return;
         }
 
-        int interval = PapiMsptController.getAiThrottleInterval();
-        if (interval <= 1) {
-            return;
-        }
-        int phase = Math.floorMod(this.tickCount + this.getId(), interval);
-        if (phase != 0) {
-            ++this.noActionTime;
-            ci.cancel();
-        }
+        ci.cancel();
     }
 }

@@ -2,6 +2,7 @@ package net.ashpapi.papioptimization.mixin.crafting;
 
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import java.util.Optional;
 import net.ashpapi.papioptimization.access.FastRecipeMap;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.item.crafting.Recipe;
@@ -15,13 +16,19 @@ import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
-import java.util.Optional;
-
 @Mixin(value = RecipeManager.class, priority = 1500)
 public abstract class RecipeManagerFastMixin {
 
     @Shadow
     private RecipeMap recipes;
+
+    @Shadow
+    private <T extends Recipe<?>> @Nullable RecipeHolder<T> byKeyTyped(
+            RecipeType<T> type,
+            ResourceKey<Recipe<?>> key
+    ) {
+        return null;
+    }
 
     @WrapMethod(
             method = "getRecipeFor(Lnet/minecraft/world/item/crafting/RecipeType;Lnet/minecraft/world/item/crafting/RecipeInput;Lnet/minecraft/world/level/Level;Lnet/minecraft/resources/ResourceKey;)Ljava/util/Optional;"
@@ -36,7 +43,17 @@ public abstract class RecipeManagerFastMixin {
         if (input.isEmpty()) {
             return Optional.empty();
         }
-        return original.call(type, input, level, lastRecipe);
+        if (lastRecipe != null) {
+            RecipeHolder<T> holder = this.byKeyTyped(type, lastRecipe);
+            if (holder != null && holder.value().matches(input, level)) {
+                return Optional.of(holder);
+            }
+        }
+        RecipeMap currentMap = this.recipes;
+        if (currentMap == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(((FastRecipeMap) currentMap).papi$getOrCreateIndex(type).findFirstMatch(input, level));
     }
 
     @WrapMethod(
@@ -52,7 +69,14 @@ public abstract class RecipeManagerFastMixin {
         if (input.isEmpty()) {
             return Optional.empty();
         }
-        return original.call(type, input, level, lastRecipe);
+        if (lastRecipe != null && lastRecipe.value().matches(input, level)) {
+            return Optional.of(lastRecipe);
+        }
+        RecipeMap currentMap = this.recipes;
+        if (currentMap == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(((FastRecipeMap) currentMap).papi$getOrCreateIndex(type).findFirstMatch(input, level));
     }
 
     @WrapMethod(

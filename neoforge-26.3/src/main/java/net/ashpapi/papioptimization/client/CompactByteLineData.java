@@ -1,7 +1,10 @@
 package net.ashpapi.papioptimization.client;
 
 import net.minecraft.client.gui.font.providers.UnihexProvider;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 
+@OnlyIn(Dist.CLIENT)
 public record CompactByteLineData(long low, long high) implements UnihexProvider.LineData {
 
     @Override

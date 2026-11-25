@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import java.util.function.Predicate;
+import net.ashpapi.papioptimization.physics.PapiFluidSectionCursor;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityFluidInteraction;
@@ -15,33 +16,10 @@ import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
 import net.neoforged.neoforge.fluids.FluidType;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 
 @Mixin(value = EntityFluidInteraction.class, priority = 1500)
 public abstract class EntityFluidInteractionMixin {
-
-    @Unique
-    private static final class SectionCursor {
-        Level level;
-        int chunkX = Integer.MIN_VALUE;
-        int chunkZ = Integer.MIN_VALUE;
-        int secY = Integer.MIN_VALUE;
-        LevelChunk chunk;
-        LevelChunkSection section;
-
-        void reset() {
-            this.level = null;
-            this.chunk = null;
-            this.section = null;
-            this.chunkX = Integer.MIN_VALUE;
-            this.chunkZ = Integer.MIN_VALUE;
-            this.secY = Integer.MIN_VALUE;
-        }
-    }
-
-    @Unique
-    private static final ThreadLocal<SectionCursor> PAPI$CURSOR = ThreadLocal.withInitial(SectionCursor::new);
 
     @WrapMethod(method = "update(Lnet/minecraft/world/entity/Entity;Ljava/util/function/Predicate;)Z")
     private boolean papi$scopedFluidSectionCursor(
@@ -49,7 +27,7 @@ public abstract class EntityFluidInteractionMixin {
             Predicate<FluidType> predicate,
             Operation<Boolean> original
     ) {
-        SectionCursor cursor = PAPI$CURSOR.get();
+        PapiFluidSectionCursor cursor = PapiFluidSectionCursor.LOCAL.get();
         cursor.reset();
         try {
             return original.call(entity, predicate);
@@ -75,7 +53,7 @@ public abstract class EntityFluidInteractionMixin {
         int cx = x >> 4;
         int cz = z >> 4;
         int sy = y >> 4;
-        SectionCursor cursor = PAPI$CURSOR.get();
+        PapiFluidSectionCursor cursor = PapiFluidSectionCursor.LOCAL.get();
         if (cursor.level != level || cursor.chunkX != cx || cursor.chunkZ != cz) {
             cursor.level = level;
             cursor.chunkX = cx;

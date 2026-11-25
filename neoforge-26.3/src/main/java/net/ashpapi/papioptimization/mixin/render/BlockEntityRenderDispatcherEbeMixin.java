@@ -1,6 +1,10 @@
 package net.ashpapi.papioptimization.mixin.render;
 
+import net.ashpapi.papioptimization.access.PapiSignTextCache;
 import net.ashpapi.papioptimization.client.ebe.PapiEbeRuntime;
+import net.ashpapi.papioptimization.client.ebe.PapiSignTextBudget;
+import net.ashpapi.papioptimization.client.occlusion.PapiOcclusionEngine;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
 import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
@@ -30,13 +34,24 @@ public abstract class BlockEntityRenderDispatcherEbeMixin {
 
     @Inject(method = "onResourceManagerReload", at = @At("RETURN"))
     private void papi$clearEbeCacheOnReload(ResourceManager resourceManager, CallbackInfo ci) {
-        PapiEbeRuntime.clearCache();
+        PapiEbeRuntime.onResourceReload();
+    }
+
+    @Inject(method = "prepare", at = @At("RETURN"))
+    private void papi$prepareEbeFrameContext(Vec3 cameraPos, CallbackInfo ci) {
+        if (cameraPos == null || PapiOcclusionEngine.isShadowPass()) {
+            return;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        ClientLevel cl = mc != null ? mc.level : null;
+        PapiEbeRuntime.updateFrameContext(cameraPos.x, cameraPos.y, cameraPos.z, cl);
+        PapiSignTextBudget.beginFrame();
     }
 
     @Inject(
-        method = "tryExtractRenderState(Lnet/minecraft/world/level/block/entity/BlockEntity;FLnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;ZLnet/minecraft/client/renderer/culling/Frustum;)Lnet/minecraft/client/renderer/blockentity/state/BlockEntityRenderState;",
-        at = @At("HEAD"),
-        cancellable = true
+            method = "tryExtractRenderState(Lnet/minecraft/world/level/block/entity/BlockEntity;FLnet/minecraft/client/renderer/feature/ModelFeatureRenderer$CrumblingOverlay;ZLnet/minecraft/client/renderer/culling/Frustum;)Lnet/minecraft/client/renderer/blockentity/state/BlockEntityRenderState;",
+            at = @At("HEAD"),
+            cancellable = true
     )
     private <E extends BlockEntity, S extends BlockEntityRenderState> void papi$skipBakedStaticBlockEntity(
             E blockEntity,
@@ -49,12 +64,25 @@ public abstract class BlockEntityRenderDispatcherEbeMixin {
         if (!(blockEntity.getLevel() instanceof ClientLevel cl)) {
             return;
         }
-        Vec3 cam = this.cameraPos;
-        if (cam != null) {
-            PapiEbeRuntime.updateFrameContext(cam.x, cam.y, cam.z, cl.getGameTime());
-        }
         if (crumblingOverlay == null && blockEntity instanceof SignBlockEntity sign) {
-            if (!sign.getText(SignTextSlot.FRONT).hasMessage(false) && !sign.getText(SignTextSlot.BACK).hasMessage(false)) {
+            Minecraft mc = Minecraft.getInstance();
+            boolean filtered = mc != null && mc.isTextFilteringEnabled();
+            var frontText = sign.getText(SignTextSlot.FRONT);
+            var backText = sign.getText(SignTextSlot.BACK);
+            boolean hasFront = frontText instanceof PapiSignTextCache fc
+                    ? fc.papi$hasVisibleMessage(filtered)
+                    : PapiSignTextCache.papi$computeVisibleMessage(frontText, filtered);
+            boolean hasBack = backText instanceof PapiSignTextCache bc
+                    ? bc.papi$hasVisibleMessage(filtered)
+                    : PapiSignTextCache.papi$computeVisibleMessage(backText, filtered);
+            if (!hasFront && !hasBack) {
+                cir.setReturnValue(null);
+                return;
+            }
+            if (!renderOffScreen
+                    && !PapiOcclusionEngine.isShadowPass()
+                    && !PapiOcclusionEngine.isShadowFrustum(frustum)
+                    && PapiSignTextBudget.shouldSkipSignBeforeExtract(sign, this.cameraPos, hasFront, hasBack)) {
                 cir.setReturnValue(null);
                 return;
             }

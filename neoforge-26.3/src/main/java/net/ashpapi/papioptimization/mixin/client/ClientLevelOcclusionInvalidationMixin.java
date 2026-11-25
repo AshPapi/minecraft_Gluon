@@ -1,11 +1,8 @@
 package net.ashpapi.papioptimization.mixin.client;
 
-import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
-import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.ashpapi.papioptimization.client.occlusion.PapiOcclusionEngine;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.neoforged.api.distmarker.Dist;
@@ -14,47 +11,53 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @OnlyIn(Dist.CLIENT)
 @Mixin(value = ClientLevel.class, priority = 1500)
 public abstract class ClientLevelOcclusionInvalidationMixin {
 
-    @WrapMethod(method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z")
-    private boolean papi$guardOcclusionOnSetBlock(
+    @Inject(
+        method = "setBlock(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;II)Z",
+        at = @At("RETURN")
+    )
+    private void papi$onSetBlock(
             BlockPos pos,
             BlockState state,
             int flags,
             int recursionLeft,
-            Operation<Boolean> original
+            CallbackInfoReturnable<Boolean> cir
     ) {
-        PapiOcclusionEngine.beginBlockWrite(pos);
-        try {
-            return original.call(pos, state, flags, recursionLeft);
-        } finally {
-            PapiOcclusionEngine.endBlockWrite(pos);
+        if (cir.getReturnValueZ()) {
+            PapiOcclusionEngine.invalidateBlockSectionAt((ClientLevel) (Object) this, pos);
         }
     }
 
-    @WrapMethod(method = "setServerVerifiedBlockState")
-    private void papi$guardOcclusionOnServerVerifiedBlock(
-            BlockPos pos,
-            BlockState state,
-            int flags,
-            Operation<Void> original
+    @Inject(method = "setServerVerifiedBlockState", at = @At("RETURN"))
+    private void papi$onServerVerifiedBlock(BlockPos pos, BlockState state, int flags, CallbackInfo ci) {
+        PapiOcclusionEngine.invalidateBlockSectionAt((ClientLevel) (Object) this, pos);
+    }
+
+    @Inject(method = "setSectionDirtyWithNeighbors", at = @At("RETURN"))
+    private void papi$onSectionDirtyWithNeighbors(int sectionX, int sectionY, int sectionZ, CallbackInfo ci) {
+        PapiOcclusionEngine.invalidateSectionCoords((ClientLevel) (Object) this, sectionX, sectionY, sectionZ);
+    }
+
+    @Inject(method = "setSectionRangeDirty", at = @At("RETURN"))
+    private void papi$onSectionRangeDirty(
+            int minY,
+            int minX,
+            int minZ,
+            int maxX,
+            int maxY,
+            int maxZ,
+            CallbackInfo ci
     ) {
-        PapiOcclusionEngine.beginBlockWrite(pos);
-        try {
-            original.call(pos, state, flags);
-        } finally {
-            PapiOcclusionEngine.endBlockWrite(pos);
-        }
+        PapiOcclusionEngine.onClientLightChange();
     }
 
     @Inject(method = "unload", at = @At("RETURN"))
     private void papi$invalidateOcclusionOnChunkUnload(LevelChunk chunk, CallbackInfo ci) {
-        if (chunk != null) {
-            ChunkPos pos = chunk.getPos();
-            PapiOcclusionEngine.invalidateChunk(pos.x(), pos.z(), chunk.getMinSectionY(), chunk.getMaxSectionY());
-        }
+        PapiOcclusionEngine.invalidateLoadedChunkSections(chunk);
     }
 }

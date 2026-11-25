@@ -1,12 +1,11 @@
 package net.ashpapi.papioptimization.client;
 
-import com.google.common.cache.LoadingCache;
 import net.ashpapi.papioptimization.client.ebe.PapiEbeRuntime;
+import net.ashpapi.papioptimization.client.ebe.PapiSodiumEbeBridge;
+import net.ashpapi.papioptimization.client.map.PapiMapAtlasManager;
 import net.ashpapi.papioptimization.client.occlusion.PapiOcclusionEngine;
-import net.ashpapi.papioptimization.mixin.core.DataComponentsAccessor;
-import net.ashpapi.papioptimization.mixin.core.EncoderCacheAccessor;
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.EncoderCache;
+import net.minecraft.client.gui.components.DebugScreenOverlay;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 
@@ -19,25 +18,33 @@ public class GpuMemoryLeakHandler {
         return INSTANCE;
     }
 
-    private static void cleanupCaches() {
-        MapDecorationCache.clear();
-        PapiOcclusionEngine.clear();
-        PapiEbeRuntime.clearCache();
-        PapiQuadCanonicalizer.clear();
-        PapiClientCaches.invalidateAll();
-        EncoderCache encoderCache = DataComponentsAccessor.papi$getEncoderCache();
-        if (encoderCache != null) {
-            LoadingCache<?, ?> cache = ((EncoderCacheAccessor) encoderCache).papi$getCache();
-            if (cache != null) {
-                cache.invalidateAll();
+    private static void clearDebugChunkCache() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc != null) {
+            DebugScreenOverlay debugOverlay = mc.getDebugOverlay();
+            if (debugOverlay != null) {
+                debugOverlay.clearChunkCache();
             }
         }
     }
 
+    private static void cleanupCaches() {
+        MapDecorationCache.clear();
+        PapiMapAtlasManager.reset();
+        PapiOcclusionEngine.clear();
+        PapiEbeRuntime.clearCache();
+        PapiQuadCanonicalizer.clear();
+        PapiClientCaches.invalidateAll();
+        PapiClientCaches.invalidateEncoderCache();
+        clearDebugChunkCache();
+    }
+
     private static void cleanupLevelCaches() {
+        PapiSodiumEbeBridge.clearPending();
         PapiEbeRuntime.resetFrameContext();
         PapiOcclusionEngine.clear();
         MapDecorationCache.clear();
+        clearDebugChunkCache();
     }
 
     public void onLevelChange() {

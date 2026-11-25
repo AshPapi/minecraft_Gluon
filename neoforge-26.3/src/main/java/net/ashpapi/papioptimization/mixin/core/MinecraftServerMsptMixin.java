@@ -6,6 +6,8 @@ import java.util.function.BooleanSupplier;
 import net.ashpapi.papioptimization.server.PapiAutosaveState;
 import net.ashpapi.papioptimization.server.PapiMsptController;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.TickTask;
+import net.minecraft.util.thread.ReentrantBlockableEventLoop;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -13,10 +15,60 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value = MinecraftServer.class, priority = 1500)
-public abstract class MinecraftServerMsptMixin {
+public abstract class MinecraftServerMsptMixin extends ReentrantBlockableEventLoop<TickTask> {
 
     @Unique
     private long papi$tickStartNanos;
+
+    @Unique
+    private volatile boolean papi$inStopSaving;
+
+    @Unique
+    private volatile boolean papi$finishedSaving;
+
+    protected MinecraftServerMsptMixin(String name) {
+        super(name, false);
+    }
+
+    @Inject(method = "runServer", at = @At("HEAD"))
+    private void papi$resetMsptOnServerStart(CallbackInfo ci) {
+        this.papi$inStopSaving = false;
+        this.papi$finishedSaving = false;
+        PapiMsptController.reset();
+    }
+
+    @Inject(method = "stopServer", at = @At("HEAD"))
+    private void papi$beginStopServerSaving(CallbackInfo ci) {
+        this.papi$finishedSaving = false;
+        this.papi$inStopSaving = true;
+    }
+
+    @Inject(
+            method = "stopServer",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/server/MinecraftServer;saveAllChunks(ZZZ)Z",
+                    shift = At.Shift.AFTER
+            )
+    )
+    private void papi$markFinishedSavingWorlds(CallbackInfo ci) {
+        this.papi$finishedSaving = true;
+        this.papi$inStopSaving = false;
+    }
+
+    @Inject(method = "stopServer", at = @At("RETURN"))
+    private void papi$finishStopServerSaving(CallbackInfo ci) {
+        this.papi$finishedSaving = true;
+        this.papi$inStopSaving = false;
+    }
+
+    @WrapMethod(method = "scheduleExecutables")
+    private boolean papi$keepScheduleExecutablesUntilSaved(Operation<Boolean> original) {
+        if (original.call()) {
+            return true;
+        }
+        return this.papi$inStopSaving && !this.papi$finishedSaving && super.scheduleExecutables();
+    }
 
     @Inject(method = "tickServer", at = @At("HEAD"))
     private void papi$markServerTickStart(BooleanSupplier haveTime, CallbackInfo ci) {

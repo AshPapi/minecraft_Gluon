@@ -7,11 +7,6 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * PapiOptimization Patrol Spawner Fast Skip:
- * Bypasses pillager patrol spawn scanning when enemy spawning is disabled
- * or in dimensions without skylight (Nether, End), preserving 100% vanilla parity.
- */
 @Mixin(value = PatrolSpawner.class, priority = 1500)
 public abstract class PatrolSpawnerFastMixin {
 

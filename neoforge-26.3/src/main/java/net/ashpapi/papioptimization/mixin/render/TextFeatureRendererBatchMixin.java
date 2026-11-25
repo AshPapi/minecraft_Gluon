@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import net.ashpapi.papioptimization.access.PapiReorderableGroupState;
+import net.ashpapi.papioptimization.client.PapiTextBatchContext;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.renderer.feature.FeatureFrameContext;
 import net.minecraft.client.renderer.feature.TextFeatureRenderer;
@@ -40,30 +41,35 @@ public abstract class TextFeatureRendererBatchMixin {
             List<TextFeatureRenderer.Submit> submits,
             Operation<Void> original
     ) {
-        if (submits == null || submits.size() <= 2) {
-            original.call(context, submits);
-            return;
-        }
-        if (!((Object) this instanceof PapiReorderableGroupState state) || !state.papi$isCurrentGroupCanReorder()) {
-            original.call(context, submits);
-            return;
-        }
-        for (int i = 0, len = submits.size(); i < len; i++) {
-            TextFeatureRenderer.Submit submit = submits.get(i);
-            boolean outlined = submit.content() instanceof TextFeatureRenderer.Content.Text t && t.outlineColor() != 0;
-            if (!outlined && submit.displayMode() == Font.DisplayMode.SEE_THROUGH) {
+        int prevGen = PapiTextBatchContext.pushBuildGroup();
+        try {
+            if (submits == null || submits.size() <= 2) {
                 original.call(context, submits);
                 return;
             }
-        }
-        ArrayList<TextFeatureRenderer.Submit> sorted = this.papi$sortedSubmits;
-        sorted.clear();
-        try {
-            sorted.addAll(submits);
-            sorted.sort(PAPI$TEXT_BATCH_ORDER);
-            original.call(context, sorted);
-        } finally {
+            if (!((Object) this instanceof PapiReorderableGroupState state) || !state.papi$isCurrentGroupCanReorder()) {
+                original.call(context, submits);
+                return;
+            }
+            for (int i = 0, len = submits.size(); i < len; i++) {
+                TextFeatureRenderer.Submit submit = submits.get(i);
+                boolean outlined = submit.content() instanceof TextFeatureRenderer.Content.Text t && t.outlineColor() != 0;
+                if (!outlined && submit.displayMode() == Font.DisplayMode.SEE_THROUGH) {
+                    original.call(context, submits);
+                    return;
+                }
+            }
+            ArrayList<TextFeatureRenderer.Submit> sorted = this.papi$sortedSubmits;
             sorted.clear();
+            try {
+                sorted.addAll(submits);
+                sorted.sort(PAPI$TEXT_BATCH_ORDER);
+                original.call(context, sorted);
+            } finally {
+                sorted.clear();
+            }
+        } finally {
+            PapiTextBatchContext.popBuildGroup(prevGen);
         }
     }
 }

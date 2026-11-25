@@ -36,7 +36,22 @@ public final class PapiStatusCommand {
                             ctx.getSource().sendSuccess(PapiStatusCommand::buildServerStatusComponent, false);
                             return 1;
                         }))
+                        .then(Commands.literal("redstone")
+                                .executes(ctx -> setRedstoneRuntime(ctx.getSource(), !PapiConfig.rawAlternateCurrentRuntime()))
+                                .then(Commands.literal("on").executes(ctx -> setRedstoneRuntime(ctx.getSource(), true)))
+                                .then(Commands.literal("off").executes(ctx -> setRedstoneRuntime(ctx.getSource(), false)))
+                        )
         );
+    }
+
+    private static int setRedstoneRuntime(CommandSourceStack source, boolean enabled) {
+        PapiConfig.setAlternateCurrentRuntime(enabled);
+        String mode = enabled ? "Wavefront (Alternate Current)" : "Vanilla DefaultRedstoneWireEvaluator";
+        source.sendSuccess(
+                () -> Component.literal("[" + PapiOptimizationMod.MOD_NAME + "] Redstone solver: " + mode),
+                true
+        );
+        return 1;
     }
 
     public static void registerClient(CommandDispatcher<CommandSourceStack> dispatcher) {
@@ -58,10 +73,11 @@ public final class PapiStatusCommand {
         double mspt = PapiMsptController.getAverageMspt();
         double target = PapiConfig.msptTarget();
         int aiInterval = PapiMsptController.getAiThrottleInterval();
+        String acState = PapiConfig.rawAlternateCurrentRuntime() ? "on" : "off";
 
         String msg = String.format(
                 Locale.ROOT,
-                "[%s v%s Server] Mixins: active=%d, disabled=%d | Yield/Off: %s | MSPT: %.2f ms (target %.1f, AI=%dt)",
+                "[%s v%s Server] Mixins: active=%d, disabled=%d | Yield/Off: %s | MSPT: %.2f ms (target %.1f, AI=%dt) | AC: %s",
                 PapiOptimizationMod.MOD_NAME,
                 PapiOptimizationMod.MOD_VERSION,
                 active,
@@ -69,7 +85,8 @@ public final class PapiStatusCommand {
                 reasonStr,
                 mspt,
                 target,
-                aiInterval
+                aiInterval,
+                acState
         );
         return Component.literal(msg);
     }

@@ -1,10 +1,12 @@
 package net.ashpapi.papioptimization.mixin.pathfinding;
 
-import net.ashpapi.papioptimization.core.PapiTagEpoch;
 import net.ashpapi.papioptimization.pathfinding.PapiBlockStatePathType;
+import net.ashpapi.papioptimization.pathfinding.PapiPathTypeHelper;
+import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.pathfinder.PathType;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
@@ -19,16 +21,13 @@ public abstract class BlockStateBasePathTypeMixin implements PapiBlockStatePathT
     private boolean isAir;
 
     @Shadow
-    public abstract net.minecraft.world.level.block.Block getBlock();
+    public abstract Block getBlock();
 
     @Shadow
     public abstract FluidState getFluidState();
 
     @Unique
-    private PathType papi$cachedPathType;
-
-    @Unique
-    private volatile int papi$cachedPathTypeEpoch = 0;
+    private volatile long papi$packedPathCache = 0L;
 
     @Unique
     private volatile boolean papi$cacheableState = false;
@@ -37,9 +36,8 @@ public abstract class BlockStateBasePathTypeMixin implements PapiBlockStatePathT
     private void papi$resetPathTypeOnInitCache(CallbackInfo ci) {
         FluidState fluid = this.getFluidState();
         boolean vanillaFluid = fluid.isEmpty() || fluid.getType().getClass().getName().startsWith("net.minecraft.");
-        this.papi$cacheableState = vanillaFluid && PapiTagEpoch.isCacheableBlock(this.getBlock());
-        this.papi$cachedPathType = this.isAir ? PathType.OPEN : null;
-        this.papi$cachedPathTypeEpoch = 0;
+        this.papi$cacheableState = vanillaFluid && PapiPathTypeHelper.isCacheableBlock(this.getBlock());
+        this.papi$packedPathCache = 0L;
     }
 
     @Override
@@ -48,24 +46,51 @@ public abstract class BlockStateBasePathTypeMixin implements PapiBlockStatePathT
     }
 
     @Override
-    public PathType papi$getCachedPathType(int epoch) {
+    public @Nullable PathType papi$getCachedPathType(int epoch) {
         if (!this.papi$cacheableState) {
             return null;
         }
         if (this.isAir) {
             return PathType.OPEN;
         }
-        if (this.papi$cachedPathTypeEpoch != epoch) {
+        long packed = this.papi$packedPathCache;
+        if ((int) (packed >>> 32) != epoch) {
             return null;
         }
-        return this.papi$cachedPathType;
+        return PapiPathTypeHelper.bySlot((int) ((packed >>> 16) & 0xFFFFL));
     }
 
     @Override
     public void papi$setCachedPathType(PathType type, int epoch) {
+        if (this.papi$cacheableState && !this.isAir && type != null) {
+            int selfSlot = PapiPathTypeHelper.toSlot(type) & 0xFFFF;
+            long prev = this.papi$packedPathCache;
+            long neighborBits = ((int) (prev >>> 32) == epoch) ? (prev & 0xFFFFL) : 0L;
+            this.papi$packedPathCache = (((long) epoch) << 32) | (((long) selfSlot) << 16) | neighborBits;
+        }
+    }
+
+    @Override
+    public int papi$getCachedNeighborSlot(int epoch) {
+        if (!this.papi$cacheableState) {
+            return PapiPathTypeHelper.NEIGHBOR_UNSET;
+        }
+        if (this.isAir) {
+            return PapiPathTypeHelper.NEIGHBOR_NONE;
+        }
+        long packed = this.papi$packedPathCache;
+        if ((int) (packed >>> 32) != epoch) {
+            return PapiPathTypeHelper.NEIGHBOR_UNSET;
+        }
+        return (int) (packed & 0xFFFFL);
+    }
+
+    @Override
+    public void papi$setCachedNeighborSlot(int slot, int epoch) {
         if (this.papi$cacheableState && !this.isAir) {
-            this.papi$cachedPathType = type;
-            this.papi$cachedPathTypeEpoch = epoch;
+            long prev = this.papi$packedPathCache;
+            long selfBits = ((int) (prev >>> 32) == epoch) ? (prev & 0xFFFF0000L) : 0L;
+            this.papi$packedPathCache = (((long) epoch) << 32) | selfBits | ((long) (slot & 0xFFFF));
         }
     }
 }

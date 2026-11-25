@@ -23,7 +23,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(value = ArmorStand.class, priority = 1500)
 public abstract class ArmorStandOptimizationMixin extends LivingEntity implements ArmorStandSleepHolder {
 
-    @Shadow public abstract boolean isMarker();
+    @Shadow
+    public abstract boolean isMarker();
 
     @Unique
     private volatile int papi$sleepTicks = 0;
@@ -75,33 +76,21 @@ public abstract class ArmorStandOptimizationMixin extends LivingEntity implement
         this.papi$sleepZ = z;
     }
 
-    /**
-     * Wakes up armor stand immediately when taking damage.
-     */
     @Inject(method = "hurtServer", at = @At("HEAD"))
     private void papi$wakeUpOnHurt(ServerLevel level, DamageSource source, float damage, CallbackInfoReturnable<Boolean> cir) {
         this.papi$wakeUp();
     }
 
-    /**
-     * Wakes up armor stand immediately when interacted with by a player.
-     */
     @Inject(method = "interact", at = @At("HEAD"))
     private void papi$wakeUpOnInteract(Player player, InteractionHand hand, Vec3 location, CallbackInfoReturnable<InteractionResult> cir) {
         this.papi$wakeUp();
     }
 
-    /**
-     * Wakes up armor stand immediately when struck by lightning.
-     */
     @Inject(method = "thunderHit", at = @At("HEAD"))
     private void papi$wakeUpOnLightning(ServerLevel level, LightningBolt lightningBolt, CallbackInfo ci) {
         this.papi$wakeUp();
     }
 
-    /**
-     * Completely eliminates minecart spatial queries for markers and sleeping stands.
-     */
     @Inject(method = "pushEntities", at = @At("HEAD"), cancellable = true)
     private void papi$cancelPushEntities(CallbackInfo ci) {
         if (this.isMarker() || this.papi$isSleeping()) {

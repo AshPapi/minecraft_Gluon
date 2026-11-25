@@ -4,6 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.PowderSnowBlock;
+import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
@@ -20,7 +21,10 @@ public abstract class PowderSnowBlockMixin {
             Direction direction,
             Operation<Boolean> original
     ) {
-        if (!adjacentState.isAir() && adjacentState.canOcclude() && adjacentState.isSolidRender()) {
+        if (adjacentState == state
+                || (adjacentState.isSolidRender()
+                        && adjacentState.canOcclude()
+                        && adjacentState.getRenderShape() == RenderShape.MODEL)) {
             return true;
         }
         return original.call(state, adjacentState, direction);

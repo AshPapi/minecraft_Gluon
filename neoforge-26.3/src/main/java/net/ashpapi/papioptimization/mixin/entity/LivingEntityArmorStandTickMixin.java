@@ -18,13 +18,10 @@ public abstract class LivingEntityArmorStandTickMixin extends Entity {
         super(entityType, level);
     }
 
-    /**
-     * Skips heavy LivingEntity ticking (super.tick(), baseTick(), equipment checks, aiStep,
-     * travel, fluid checks, block effects) for sleeping or marker ArmorStands.
-     */
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
     private void papi$throttleArmorStandTick(CallbackInfo ci) {
         if ((Object) this instanceof ArmorStand stand && ArmorStandOptimizer.shouldSkipTick(stand)) {
+            ++this.tickCount;
             ci.cancel();
         }
     }

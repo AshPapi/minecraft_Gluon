@@ -3,9 +3,12 @@ package net.ashpapi.papioptimization.mixin.blockentity;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.world.level.block.entity.ChestLidController;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
+@OnlyIn(Dist.CLIENT)
 @Mixin(value = ChestLidController.class, priority = 1500)
 public abstract class StaticLidBlockEntityMixin {
 

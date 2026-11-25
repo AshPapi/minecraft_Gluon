@@ -5,7 +5,6 @@ import com.mojang.datafixers.DataFixerBuilder;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import net.ashpapi.papioptimization.startup.PapiLazyDfuBridge;
-import net.minecraft.util.Util;
 import net.minecraft.util.datafix.DataFixers;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -20,8 +19,11 @@ public abstract class DataFixersMixin {
     @Shadow @Final private static DataFixerBuilder.Result DATA_FIXER;
 
     @Inject(method = "optimize", at = @At("HEAD"), cancellable = true)
-    private static void papi$skipEagerDfuOptimization(Set<DSL.TypeReference> types, CallbackInfoReturnable<CompletableFuture<?>> cir) {
-        PapiLazyDfuBridge.registerOptimizer(DATA_FIXER.fixer(), type -> DATA_FIXER.optimize(Set.of(type), Util.backgroundExecutor()));
+    private static void papi$skipEagerDfuOptimization(
+            Set<DSL.TypeReference> types,
+            CallbackInfoReturnable<CompletableFuture<?>> cir
+    ) {
+        PapiLazyDfuBridge.registerFixer(DATA_FIXER.fixer());
         cir.setReturnValue(CompletableFuture.completedFuture(null));
     }
 }

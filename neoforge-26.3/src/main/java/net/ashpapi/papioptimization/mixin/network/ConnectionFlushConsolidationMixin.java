@@ -3,9 +3,11 @@ package net.ashpapi.papioptimization.mixin.network;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelOutboundHandler;
 import java.util.concurrent.atomic.AtomicInteger;
-import net.ashpapi.papioptimization.network.PapiNetworkClassifier;
+import net.ashpapi.papioptimization.network.PapiAutoFlush;
 import net.minecraft.network.Connection;
+import net.minecraft.network.Varint21LengthFieldPrepender;
 import net.minecraft.network.protocol.Packet;
 import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
@@ -16,10 +18,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value = Connection.class, priority = 1500)
-public abstract class ConnectionFlushConsolidationMixin {
+public abstract class ConnectionFlushConsolidationMixin implements PapiAutoFlush {
 
-    @Shadow
-    private int tickCount;
+    @Unique
+    private static final Varint21LengthFieldPrepender PAPI$SHARED_PREPENDER = new Varint21LengthFieldPrepender();
 
     @Shadow
     public abstract boolean isMemoryConnection();
@@ -27,46 +29,71 @@ public abstract class ConnectionFlushConsolidationMixin {
     @Shadow
     public abstract boolean isConnected();
 
-    @Unique
-    private static final int PAPI$MAX_CONSOLIDATED_WRITES = 32;
+    @Shadow
+    public abstract void flushChannel();
 
     @Unique
-    private final AtomicInteger papi$pendingWrites = new AtomicInteger(0);
+    private final AtomicInteger papi$suspendDepth = new AtomicInteger(0);
+
+    @Unique
+    private volatile boolean papi$hasDeferredFlush;
+
+    @Override
+    public void papi$suspendAutoFlush() {
+        this.papi$suspendDepth.getAndIncrement();
+    }
+
+    @Override
+    public void papi$resumeAutoFlush() {
+        int rem = this.papi$suspendDepth.decrementAndGet();
+        if (rem <= 0) {
+            if (rem < 0) {
+                this.papi$suspendDepth.set(0);
+            }
+            if (this.papi$hasDeferredFlush) {
+                this.papi$hasDeferredFlush = false;
+                if (this.isConnected()) {
+                    this.flushChannel();
+                }
+            }
+        }
+    }
+
+    @WrapMethod(method = "createFrameEncoder")
+    private static ChannelOutboundHandler papi$sharePrepender(
+            boolean local,
+            Operation<ChannelOutboundHandler> original
+    ) {
+        if (!local) {
+            return PAPI$SHARED_PREPENDER;
+        }
+        return original.call(true);
+    }
 
     @WrapMethod(method = "send(Lnet/minecraft/network/protocol/Packet;Lio/netty/channel/ChannelFutureListener;Z)V")
-    private void papi$consolidateFlush(
+    private void papi$consolidatePhaseFlush(
             Packet<?> packet,
             @Nullable ChannelFutureListener listener,
             boolean flush,
             Operation<Void> original
     ) {
-        if (flush
-                && listener == null
-                && this.tickCount > 0
-                && this.isConnected()
-                && !this.isMemoryConnection()
-                && !PapiNetworkClassifier.isImmediateFlushPacket(packet)) {
-            int prev = this.papi$pendingWrites.getAndUpdate(v -> (v + 1 >= PAPI$MAX_CONSOLIDATED_WRITES) ? 0 : (v + 1));
-            if (prev + 1 < PAPI$MAX_CONSOLIDATED_WRITES) {
-                original.call(packet, null, false);
-                return;
-            }
-            original.call(packet, null, true);
+        if (this.papi$suspendDepth.getAcquire() == 0) {
+            original.call(packet, listener, flush);
+            return;
+        }
+        if (flush && listener == null && !this.isMemoryConnection() && this.isConnected()) {
+            this.papi$hasDeferredFlush = true;
+            original.call(packet, null, false);
             return;
         }
         if (flush) {
-            this.papi$pendingWrites.getAndSet(0);
+            this.papi$hasDeferredFlush = false;
         }
         original.call(packet, listener, flush);
     }
 
-    @Inject(method = "tick", at = @At("TAIL"))
-    private void papi$resetPendingWritesOnTick(CallbackInfo ci) {
-        this.papi$pendingWrites.getAndSet(0);
-    }
-
     @Inject(method = "flushChannel", at = @At("HEAD"))
-    private void papi$resetPendingWritesOnFlush(CallbackInfo ci) {
-        this.papi$pendingWrites.getAndSet(0);
+    private void papi$clearDeferredOnExplicitFlush(CallbackInfo ci) {
+        this.papi$hasDeferredFlush = false;
     }
 }

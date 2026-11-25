@@ -2,6 +2,7 @@ package net.ashpapi.papioptimization.mixin.redstone;
 
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import net.ashpapi.papioptimization.config.PapiConfig;
 import net.ashpapi.papioptimization.redstone.PapiRedstoneWavefront;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
@@ -28,8 +29,18 @@ public abstract class DefaultRedstoneWireEvaluatorMixin extends RedstoneWireEval
             boolean skipShapeUpdates,
             Operation<Void> original
     ) {
-        if (!PapiRedstoneWavefront.updatePowerStrength(this.wireBlock, level, pos, state, orientation)) {
+        if (!PapiConfig.rawAlternateCurrentRuntime()
+                || !PapiRedstoneWavefront.updatePowerStrength(this.wireBlock, level, pos, state, orientation, skipShapeUpdates)) {
             original.call(level, pos, state, orientation, skipShapeUpdates);
         }
+    }
+
+    @WrapMethod(method = "calculateTargetStrength")
+    private int papi$fastCalculateTargetStrength(Level level, BlockPos pos, Operation<Integer> original) {
+        int blockSignal = this.getBlockSignal(level, pos);
+        if (blockSignal >= 14) {
+            return blockSignal;
+        }
+        return Math.max(blockSignal, this.getIncomingWireSignal(level, pos));
     }
 }

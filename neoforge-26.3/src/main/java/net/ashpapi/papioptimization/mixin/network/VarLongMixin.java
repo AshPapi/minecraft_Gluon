@@ -10,42 +10,38 @@ import org.spongepowered.asm.mixin.Unique;
 @Mixin(value = VarLong.class, priority = 1500)
 public abstract class VarLongMixin {
 
-    @Unique
-    private static final int[] PAPI$VARLONG_LENGTHS = new int[65];
-
-    static {
-        for (int i = 0; i <= 64; i++) {
-            int bits = 64 - i;
-            PAPI$VARLONG_LENGTHS[i] = bits == 0 ? 1 : (bits + 6) / 7;
-        }
-    }
-
-    /**
-     * @author AshPapi
-     * @reason Branchless single-instruction LZCNT VarLong size calculation
-     */
     @WrapMethod(method = "getByteSize")
     private static int papi$fastGetByteSize(long value, Operation<Integer> original) {
-        return PAPI$VARLONG_LENGTHS[Long.numberOfLeadingZeros(value)];
+        return (5120 - Long.numberOfLeadingZeros(value | 1L) * 73) >>> 9;
     }
 
-    /**
-     * @author AshPapi
-     * @reason Fast-path single byte VarLong write without looping
-     */
     @WrapMethod(method = "write")
     private static ByteBuf papi$fastWrite(ByteBuf buf, long value, Operation<ByteBuf> original) {
-        // Fast-path: values 0..127 fit in a single byte (90%+ of small numbers and lengths)
         if ((value & ~0x7FL) == 0L) {
             buf.writeByte((int) value);
             return buf;
         }
-
-        while ((value & -128L) != 0L) {
-            buf.writeByte((int) (value & 127L) | 128);
-            value >>>= 7;
+        if ((value & ~0x3FFFL) == 0L) {
+            int v = (int) value;
+            buf.writeShortLE((v & 0x7F) | 0x80 | ((v & 0x3F80) << 1));
+            return buf;
         }
-        buf.writeByte((int) value);
+        papi$writeLargeVarLong(buf, value);
         return buf;
+    }
+
+    @Unique
+    private static void papi$writeLargeVarLong(ByteBuf buf, long value) {
+        while ((value & ~0x3FFFL) != 0L) {
+            int v = (int) value;
+            buf.writeShortLE((v & 0x7F) | ((v & 0x3F80) << 1) | 0x8080);
+            value >>>= 14;
+        }
+        if ((value & ~0x7FL) == 0L) {
+            buf.writeByte((int) value);
+        } else {
+            int v = (int) value;
+            buf.writeShortLE((v & 0x7F) | 0x80 | ((v & 0x3F80) << 1));
+        }
     }
 }

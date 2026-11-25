@@ -1,19 +1,27 @@
 package net.ashpapi.papioptimization.mixin.poi;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import it.unimi.dsi.fastutil.shorts.Short2ObjectMap;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 import net.ashpapi.papioptimization.access.PapiPoiRecordOwner;
 import net.ashpapi.papioptimization.access.PapiPoiSectionFast;
+import net.ashpapi.papioptimization.ai.PapiPoiColumnIndex;
+import net.ashpapi.papioptimization.ai.PapiSinglePoiTypeFilter;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.SectionPos;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.entity.ai.village.poi.PoiRecord;
 import net.minecraft.world.entity.ai.village.poi.PoiSection;
 import net.minecraft.world.entity.ai.village.poi.PoiType;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -30,6 +38,10 @@ public abstract class PoiSectionFastMixin implements PapiPoiSectionFast {
     @Final
     private Short2ObjectMap<PoiRecord> records;
 
+    @Shadow
+    @Final
+    private Map<Holder<PoiType>, Set<PoiRecord>> byType;
+
     @Unique
     private boolean papi$occupancyDirty = true;
 
@@ -38,6 +50,15 @@ public abstract class PoiSectionFastMixin implements PapiPoiSectionFast {
 
     @Unique
     private boolean papi$hasAnyOccupied;
+
+    @Unique
+    private @Nullable PapiPoiColumnIndex<?> papi$columnIndex;
+
+    @Unique
+    private long papi$chunkKey;
+
+    @Unique
+    private int papi$sectionBit = -1;
 
     @Unique
     private void papi$recomputeOccupancy() {
@@ -91,17 +112,82 @@ public abstract class PoiSectionFastMixin implements PapiPoiSectionFast {
         this.papi$occupancyDirty = true;
     }
 
+    @Override
+    public void papi$bindColumnIndex(@Nullable PapiPoiColumnIndex<?> columnIndex, long chunkKey, int sectionBit) {
+        this.papi$columnIndex = columnIndex;
+        this.papi$chunkKey = chunkKey;
+        this.papi$sectionBit = sectionBit;
+    }
+
+    @Override
+    public void papi$forEachMatchingRecord(
+            Predicate<Holder<PoiType>> typePredicate,
+            PoiManager.Occupancy occupancy,
+            Consumer<PoiRecord> consumer
+    ) {
+        if (!papi$mayMatchOccupancy(occupancy) || this.byType.isEmpty()) {
+            return;
+        }
+        Predicate<? super PoiRecord> occTest = occupancy.getTest();
+        if (typePredicate instanceof PapiSinglePoiTypeFilter single) {
+            Set<PoiRecord> matchingSet = this.byType.get(single.targetType());
+            if (matchingSet != null && !matchingSet.isEmpty()) {
+                for (PoiRecord record : matchingSet) {
+                    if (occTest.test(record)) {
+                        consumer.accept(record);
+                    }
+                }
+            }
+            return;
+        }
+        for (Map.Entry<Holder<PoiType>, Set<PoiRecord>> entry : this.byType.entrySet()) {
+            Set<PoiRecord> set = entry.getValue();
+            if (!set.isEmpty() && typePredicate.test(entry.getKey())) {
+                for (PoiRecord record : set) {
+                    if (occTest.test(record)) {
+                        consumer.accept(record);
+                    }
+                }
+            }
+        }
+    }
+
+    @Override
+    public @Nullable PoiRecord papi$getRecordAt(BlockPos pos) {
+        if (this.records.isEmpty()) {
+            return null;
+        }
+        return this.records.get(SectionPos.sectionRelativePos(pos));
+    }
+
     @Inject(method = "add(Lnet/minecraft/world/entity/ai/village/poi/PoiRecord;)Z", at = @At("RETURN"))
     private void papi$onAddRecord(PoiRecord record, CallbackInfoReturnable<Boolean> cir) {
         if (cir.getReturnValueZ() && record != null) {
             ((PapiPoiRecordOwner) record).papi$setOwnerSection(this);
             this.papi$occupancyDirty = true;
+            if (this.records.size() == 1 && this.papi$columnIndex != null) {
+                this.papi$columnIndex.papi$setSectionNonEmpty(this.papi$chunkKey, this.papi$sectionBit, true);
+            }
         }
     }
 
-    @Inject(method = "remove", at = @At("RETURN"))
-    private void papi$onRemove(BlockPos pos, CallbackInfo ci) {
-        this.papi$occupancyDirty = true;
+    @WrapOperation(
+        method = "remove",
+        at = @At(
+            value = "INVOKE",
+            target = "Lit/unimi/dsi/fastutil/shorts/Short2ObjectMap;remove(S)Ljava/lang/Object;"
+        )
+    )
+    private Object papi$clearOwnerOnRemove(Short2ObjectMap<PoiRecord> map, short key, Operation<Object> original) {
+        Object removedObj = original.call(map, key);
+        if (removedObj instanceof PoiRecord removed) {
+            ((PapiPoiRecordOwner) removed).papi$setOwnerSection(null);
+            this.papi$occupancyDirty = true;
+            if (map.isEmpty() && this.papi$columnIndex != null) {
+                this.papi$columnIndex.papi$setSectionNonEmpty(this.papi$chunkKey, this.papi$sectionBit, false);
+            }
+        }
+        return removedObj;
     }
 
     @Inject(method = "release", at = @At("RETURN"))
@@ -121,16 +207,23 @@ public abstract class PoiSectionFastMixin implements PapiPoiSectionFast {
         this.papi$hasAnySpace = false;
         this.papi$hasAnyOccupied = false;
         this.papi$occupancyDirty = false;
+        if (this.papi$columnIndex != null) {
+            this.papi$columnIndex.papi$setSectionNonEmpty(this.papi$chunkKey, this.papi$sectionBit, false);
+        }
     }
 
     @Inject(method = "refresh", at = @At("RETURN"))
     private void papi$onRefresh(Consumer<BiConsumer<BlockPos, Holder<PoiType>>> consumer, CallbackInfo ci) {
-        if (!this.records.isEmpty()) {
+        boolean nonEmpty = !this.records.isEmpty();
+        if (nonEmpty) {
             for (PoiRecord rec : this.records.values()) {
                 ((PapiPoiRecordOwner) rec).papi$setOwnerSection(this);
             }
         }
         this.papi$occupancyDirty = true;
+        if (this.papi$columnIndex != null) {
+            this.papi$columnIndex.papi$setSectionNonEmpty(this.papi$chunkKey, this.papi$sectionBit, nonEmpty);
+        }
     }
 
     @Inject(method = "getRecords", at = @At("HEAD"), cancellable = true)
@@ -146,22 +239,19 @@ public abstract class PoiSectionFastMixin implements PapiPoiSectionFast {
 
     @Inject(method = "exists", at = @At("HEAD"), cancellable = true)
     private void papi$fastEmptyExists(BlockPos pos, Predicate<Holder<PoiType>> predicate, CallbackInfoReturnable<Boolean> cir) {
-        if (this.records.isEmpty()) {
-            cir.setReturnValue(false);
-        }
+        PoiRecord rec = papi$getRecordAt(pos);
+        cir.setReturnValue(rec != null && predicate.test(rec.getPoiType()));
     }
 
     @Inject(method = "getFreeTickets", at = @At("HEAD"), cancellable = true)
     private void papi$fastEmptyFreeTickets(BlockPos pos, CallbackInfoReturnable<Integer> cir) {
-        if (this.records.isEmpty()) {
-            cir.setReturnValue(0);
-        }
+        PoiRecord rec = papi$getRecordAt(pos);
+        cir.setReturnValue(rec != null ? rec.getFreeTickets() : 0);
     }
 
     @Inject(method = "getType", at = @At("HEAD"), cancellable = true)
     private void papi$fastEmptyGetType(BlockPos pos, CallbackInfoReturnable<Optional<Holder<PoiType>>> cir) {
-        if (this.records.isEmpty()) {
-            cir.setReturnValue(Optional.empty());
-        }
+        PoiRecord rec = papi$getRecordAt(pos);
+        cir.setReturnValue(rec != null ? Optional.of(rec.getPoiType()) : Optional.empty());
     }
 }

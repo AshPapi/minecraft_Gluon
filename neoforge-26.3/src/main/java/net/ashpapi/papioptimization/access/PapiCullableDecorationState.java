@@ -2,7 +2,10 @@ package net.ashpapi.papioptimization.access;
 
 public interface PapiCullableDecorationState {
 
-    boolean papi$isBackOccluded();
+    default boolean papi$isBackOccluded() {
+        return false;
+    }
 
-    void papi$setBackOccluded(boolean occluded);
+    default void papi$setBackOccluded(boolean occluded) {
+    }
 }

@@ -45,9 +45,21 @@ public abstract class AttributeMapFastMixin {
 
     @Inject(method = "<init>", at = @At("RETURN"))
     private void papi$useReferenceCollections(AttributeSupplier supplier, CallbackInfo ci) {
-        this.attributes = new Reference2ObjectOpenHashMap<>();
-        this.attributesToSync = new ReferenceOpenHashSet<>();
-        this.attributesToUpdate = new ReferenceOpenHashSet<>();
+        if (!(this.attributes instanceof Reference2ObjectOpenHashMap)) {
+            this.attributes = this.attributes.isEmpty()
+                    ? new Reference2ObjectOpenHashMap<>(4)
+                    : new Reference2ObjectOpenHashMap<>(this.attributes);
+        }
+        if (!(this.attributesToSync instanceof ReferenceOpenHashSet)) {
+            this.attributesToSync = this.attributesToSync.isEmpty()
+                    ? new ReferenceOpenHashSet<>(0)
+                    : new ReferenceOpenHashSet<>(this.attributesToSync);
+        }
+        if (!(this.attributesToUpdate instanceof ReferenceOpenHashSet)) {
+            this.attributesToUpdate = this.attributesToUpdate.isEmpty()
+                    ? new ReferenceOpenHashSet<>(0)
+                    : new ReferenceOpenHashSet<>(this.attributesToUpdate);
+        }
         this.papi$onDirtyCallback = this::onAttributeModified;
     }
 

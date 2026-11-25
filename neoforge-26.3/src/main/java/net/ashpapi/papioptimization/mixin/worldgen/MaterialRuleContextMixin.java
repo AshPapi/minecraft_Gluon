@@ -1,8 +1,13 @@
 package net.ashpapi.papioptimization.mixin.worldgen;
 
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import java.util.function.Function;
+import net.ashpapi.papioptimization.worldgen.PapiDensityBufferArena;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.world.level.biome.Biome;
+import net.minecraft.world.level.levelgen.densityfunction.DensityBuffer;
 import net.minecraft.world.level.levelgen.material.MaterialRuleContext;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -11,8 +16,6 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-
-import java.util.function.Function;
 
 @Mixin(value = MaterialRuleContext.class, priority = 1500)
 public abstract class MaterialRuleContextMixin {
@@ -58,5 +61,16 @@ public abstract class MaterialRuleContextMixin {
         this.papi$lastBlockZ = bz;
         this.papi$lastBlockBiome = resolved;
         cir.setReturnValue(resolved);
+    }
+
+    @WrapOperation(
+        method = {"getMinSurfaceLevel", "getDensitiesInChunk"},
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/level/levelgen/densityfunction/DensityBuffer;createUnpooled(I)Lnet/minecraft/world/level/levelgen/densityfunction/DensityBuffer;"
+        )
+    )
+    private DensityBuffer papi$poolDensityBuffer(int size, Operation<DensityBuffer> original) {
+        return PapiDensityBufferArena.acquireUnpooled(size);
     }
 }

@@ -5,6 +5,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import net.ashpapi.papioptimization.config.PapiConfig;
 import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
 import net.minecraft.client.multiplayer.SessionSearchTrees;
 import net.minecraft.client.searchtree.SearchTree;
@@ -36,10 +37,20 @@ public abstract class SessionSearchTreesMixin {
 
     @Unique
     private void papi$ensureBuilt(SessionSearchTrees.Key key) {
-        if (this.papi$dirtyKeys.remove(key)) {
+        if (key == null || !this.papi$dirtyKeys.contains(key)) {
+            return;
+        }
+        synchronized (this) {
+            if (!this.papi$dirtyKeys.contains(key)) {
+                return;
+            }
             Runnable reloader = this.reloaders.get(key);
-            if (reloader != null) {
-                reloader.run();
+            try {
+                if (reloader != null) {
+                    reloader.run();
+                }
+            } finally {
+                this.papi$dirtyKeys.remove(key);
             }
         }
     }
@@ -50,26 +61,24 @@ public abstract class SessionSearchTreesMixin {
             Runnable reloader,
             Operation<Void> original
     ) {
-        if (key == RECIPE_COLLECTIONS) {
-            this.reloaders.put(key, reloader);
-            this.papi$dirtyKeys.add(key);
+        if (!PapiConfig.modernFix() || key == null || reloader == null) {
+            original.call(key, reloader);
             return;
         }
-        original.call(key, reloader);
+        synchronized (this) {
+            this.reloaders.put(key, reloader);
+            this.papi$dirtyKeys.add(key);
+        }
     }
 
     @WrapMethod(method = "rebuildAfterLanguageChange")
     private void papi$deferLanguageRebuild(Operation<Void> original) {
-        for (Map.Entry<SessionSearchTrees.Key, Runnable> entry : this.reloaders.entrySet()) {
-            SessionSearchTrees.Key key = entry.getKey();
-            if (key == RECIPE_COLLECTIONS) {
-                this.papi$dirtyKeys.add(key);
-            } else {
-                Runnable reloader = entry.getValue();
-                if (reloader != null) {
-                    reloader.run();
-                }
-            }
+        if (!PapiConfig.modernFix()) {
+            original.call();
+            return;
+        }
+        synchronized (this) {
+            this.papi$dirtyKeys.addAll(this.reloaders.keySet());
         }
     }
 

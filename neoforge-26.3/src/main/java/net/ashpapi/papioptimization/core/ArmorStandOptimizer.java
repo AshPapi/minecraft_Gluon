@@ -6,59 +6,66 @@ import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
-/**
- * High-performance ArmorStand tick optimizer.
- * Provides adaptive sleeping for grounded, static armor stands and complete tick-skipping for markers.
- * Guarantees 100% vanilla parity: armor stands with gravity, flowing water, damage, or player interactions
- * wake up immediately.
- */
 public final class ArmorStandOptimizer {
 
-    public static final int SLEEP_INTERVAL_TICKS = 20; // 1 second between wake-checks for sleeping stands
+    public static final int SLEEP_INTERVAL_TICKS = 20;
 
     private ArmorStandOptimizer() {}
 
-    /**
-     * Determines whether ArmorStand tick() can be skipped this tick.
-     *
-     * @param stand the ArmorStand being evaluated
-     * @return true if tick() should be cancelled, false to execute standard vanilla tick
-     */
     public static boolean shouldSkipTick(ArmorStand stand) {
+        ArmorStandSleepHolder holder = (stand instanceof ArmorStandSleepHolder h) ? h : null;
         if (stand.level().isClientSide()) {
             return false;
         }
 
         if (!stand.isAlive() || stand.isRemoved() || stand.tickCount < 2 || stand.isPassenger() || stand.isVehicle()) {
+            if (holder != null) {
+                holder.papi$wakeUp();
+            }
             return false;
         }
 
         if (stand.isOnFire() || stand.hurtTime > 0) {
+            if (holder != null) {
+                holder.papi$wakeUp();
+            }
             return false;
         }
 
         Vec3 velocity = stand.getDeltaMovement();
         if (Math.abs(velocity.x) > 0.001 || Math.abs(velocity.y) > 0.001 || Math.abs(velocity.z) > 0.001) {
+            if (holder != null) {
+                holder.papi$wakeUp();
+            }
             return false;
         }
 
         if (stand.isInWater() || stand.isInLava()) {
+            if (holder != null) {
+                holder.papi$wakeUp();
+            }
             return false;
         }
 
         if (!stand.isNoGravity() && !stand.onGround()) {
+            if (holder != null) {
+                holder.papi$wakeUp();
+            }
             return false;
         }
 
-        if (stand instanceof ArmorStandSleepHolder holder) {
+        if (holder != null) {
             int sleepTicks = holder.papi$getSleepTicks();
             if (sleepTicks > 0) {
+                if (holder.papi$hasMovedSinceSleep(stand.getX(), stand.getY(), stand.getZ())) {
+                    holder.papi$wakeUp();
+                    return false;
+                }
                 if (stand.isMarker()) {
                     holder.papi$setSleepTicks(sleepTicks - 1);
                     return true;
                 }
-                if (holder.papi$hasMovedSinceSleep(stand.getX(), stand.getY(), stand.getZ())
-                        || !stand.level().getFluidState(stand.blockPosition()).isEmpty()) {
+                if (!stand.level().getFluidState(stand.blockPosition()).isEmpty()) {
                     holder.papi$wakeUp();
                     return false;
                 }
@@ -89,7 +96,7 @@ public final class ArmorStandOptimizer {
                 }
             }
 
-            if (!stand.level().getFluidState(stand.blockPosition()).isEmpty()) {
+            if (!stand.isMarker() && !stand.level().getFluidState(stand.blockPosition()).isEmpty()) {
                 return false;
             }
 

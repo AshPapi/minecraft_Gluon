@@ -1,29 +1,34 @@
 package net.ashpapi.papioptimization.mixin.particle;
 
-import net.minecraft.client.Camera;
+import java.util.Map;
+import java.util.Queue;
+import net.ashpapi.papioptimization.access.PapiParticleEngineAccess;
+import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleEngine;
 import net.minecraft.client.particle.ParticleGroup;
 import net.minecraft.client.particle.ParticleRenderType;
-import net.minecraft.client.renderer.culling.Frustum;
-import net.minecraft.client.renderer.state.level.ParticlesRenderState;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.Map;
-
+@OnlyIn(Dist.CLIENT)
 @Mixin(value = ParticleEngine.class, priority = 1500)
-public abstract class ParticleEngineMixin {
+public abstract class ParticleEngineMixin implements PapiParticleEngineAccess {
 
-    @Shadow @Final private Map<ParticleRenderType, ParticleGroup<?>> particles;
+    @Shadow
+    @Final
+    private Map<ParticleRenderType, ParticleGroup<?>> particles;
 
-    @Inject(method = "extract", at = @At("HEAD"), cancellable = true)
-    private void papi$skipEmptyParticleExtract(ParticlesRenderState state, Frustum frustum, Camera camera, float partialTick, CallbackInfo ci) {
-        if (this.particles.isEmpty()) {
-            ci.cancel();
-        }
+    @Shadow
+    @Final
+    private Queue<Particle> particlesToAdd;
+
+    @Override
+    public boolean papi$isSingleQuadsSaturated() {
+        ParticleGroup<?> group = this.particles.get(ParticleRenderType.SINGLE_QUADS);
+        int active = group != null ? group.size() : 0;
+        return (active + this.particlesToAdd.size()) >= 12288;
     }
 }

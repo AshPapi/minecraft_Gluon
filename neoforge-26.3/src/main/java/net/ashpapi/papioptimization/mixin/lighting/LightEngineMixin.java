@@ -1,5 +1,6 @@
 package net.ashpapi.papioptimization.mixin.lighting;
 
+import net.ashpapi.papioptimization.access.PapiLightBlockState;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.lighting.LightEngine;
@@ -46,6 +47,6 @@ public abstract class LightEngineMixin {
 
     @Unique
     private static boolean papi$isEmptyShape(BlockState state) {
-        return !state.canOcclude() || !state.useShapeForLightOcclusion();
+        return (((PapiLightBlockState) state).papi$getLightFlags() & 1) != 0;
     }
 }

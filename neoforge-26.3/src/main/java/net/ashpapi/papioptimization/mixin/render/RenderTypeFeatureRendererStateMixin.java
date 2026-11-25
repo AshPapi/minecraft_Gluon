@@ -25,11 +25,12 @@ public abstract class RenderTypeFeatureRendererStateMixin implements PapiReorder
             boolean keepOrder,
             Operation<Void> original
     ) {
+        boolean prev = this.papi$currentGroupCanReorder;
         this.papi$currentGroupCanReorder = !keepOrder;
         try {
             original.call(context, submits, keepOrder);
         } finally {
-            this.papi$currentGroupCanReorder = false;
+            this.papi$currentGroupCanReorder = prev;
         }
     }
 

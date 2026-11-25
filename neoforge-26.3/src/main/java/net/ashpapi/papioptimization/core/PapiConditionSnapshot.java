@@ -8,4 +8,9 @@ public record PapiConditionSnapshot(
         MemoryModuleType<?>[] keys,
         MemoryStatus[] statuses
 ) {
+    public static final PapiConditionSnapshot EMPTY = new PapiConditionSnapshot(
+            0,
+            new MemoryModuleType<?>[0],
+            new MemoryStatus[0]
+    );
 }

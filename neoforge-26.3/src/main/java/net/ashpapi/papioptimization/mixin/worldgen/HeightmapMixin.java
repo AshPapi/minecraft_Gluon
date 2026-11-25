@@ -1,19 +1,53 @@
 package net.ashpapi.papioptimization.mixin.worldgen;
 
+import java.util.Set;
+import java.util.function.Predicate;
+import net.minecraft.util.BitStorage;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.levelgen.Heightmap;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-
-import java.util.Set;
-import java.util.function.Predicate;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(value = Heightmap.class, priority = 1500)
 public abstract class HeightmapMixin {
+
+    @Shadow @Final private BitStorage data;
+    @Shadow @Final private ChunkAccess chunk;
+
+    @Unique
+    private final char[] papi$heights = new char[256];
+
+    @Inject(method = "setHeight", at = @At("HEAD"))
+    private void papi$syncSetHeight(int x, int z, int y, CallbackInfo ci) {
+        this.papi$heights[x | (z << 4)] = (char) Math.max(0, y - this.chunk.getMinY());
+    }
+
+    @Inject(method = "setRawData", at = @At("RETURN"))
+    private void papi$syncSetRawData(ChunkAccess chunkAccess, Heightmap.Types type, long[] rawData, CallbackInfo ci) {
+        BitStorage storage = this.data;
+        char[] heights = this.papi$heights;
+        for (int i = 0; i < 256; i++) {
+            heights[i] = (char) storage.get(i);
+        }
+    }
+
+    @Inject(method = "getFirstAvailable(II)I", at = @At("HEAD"), cancellable = true)
+    private void papi$fastGetFirstAvailable(int x, int z, CallbackInfoReturnable<Integer> cir) {
+        cir.setReturnValue((int) this.papi$heights[x | (z << 4)] + this.chunk.getMinY());
+    }
+
+    @Inject(method = "getHighestTaken", at = @At("HEAD"), cancellable = true)
+    private void papi$fastGetHighestTaken(int x, int z, CallbackInfoReturnable<Integer> cir) {
+        cir.setReturnValue((int) this.papi$heights[x | (z << 4)] + this.chunk.getMinY() - 1);
+    }
 
     @Inject(method = "primeHeightmaps", at = @At("HEAD"), cancellable = true)
     private static void papi$fastPrimeHeightmaps(ChunkAccess chunk, Set<Heightmap.Types> types, CallbackInfo ci) {
@@ -68,10 +102,14 @@ public abstract class HeightmapMixin {
                     for (int x = 0; x < 16; x++) {
                         int col = x | (z << 4);
                         int mask = pendingMask[col];
-                        if (mask == 0) continue;
+                        if (mask == 0) {
+                            continue;
+                        }
 
                         BlockState state = section.getBlockState(x, dy, z);
-                        if (state.isAir()) continue;
+                        if (state.isAir()) {
+                            continue;
+                        }
 
                         for (int h = 0; h < typeCount; h++) {
                             int bit = 1 << h;

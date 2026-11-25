@@ -36,7 +36,14 @@ public abstract class StateHolderRadixMixin<O, S> implements PapiRadixStateHolde
         return this.papi$radixTable != null;
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
+    @WrapMethod(method = "initializeNeighbors")
+    private void papi$skipNeighborsWhenRadixPresent(S[][] neighbors, Operation<Void> original) {
+        if (this.papi$radixTable == null) {
+            original.call((Object) neighbors);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
     @WrapMethod(method = "setValueInternal")
     private <T extends Comparable<T>, V extends T> S papi$fastSetValueInternal(
             Property<T> property,
@@ -45,21 +52,31 @@ public abstract class StateHolderRadixMixin<O, S> implements PapiRadixStateHolde
             Operation<S> original
     ) {
         PapiRadixTable<S> table = this.papi$radixTable;
-        if (table == null || propIdx < 0 || propIdx >= table.valueCounts.length) {
+        if (table == null) {
             return original.call(property, propIdx, value);
         }
+        if (Integer.compareUnsigned(propIdx, table.valueCounts.length) >= 0) {
+            throw new IllegalArgumentException(
+                    "Cannot set property " + property + " as it does not exist in " + this.owner
+            );
+        }
+        if (this.propertyValues[propIdx] == value) {
+            return (S) (Object) this;
+        }
         int newInternal = property.getInternalIndex(value);
-        if (newInternal < 0 || newInternal >= table.valueCounts[propIdx]) {
+        int count = table.valueCounts[propIdx];
+        if (Integer.compareUnsigned(newInternal, count) >= 0) {
             throw new IllegalArgumentException(
                     "Cannot set property " + property + " to " + value + " on " + this.owner + ", it is not an allowed value"
             );
         }
-        Comparable<?> currentVal = this.propertyValues[propIdx];
-        if (currentVal == value || value.equals(currentVal)) {
-            return (S) (Object) this;
+        int curIdx = this.papi$stateIndex;
+        if (table.bitMode) {
+            int targetIdx = (curIdx & table.keepMasks[propIdx]) | (newInternal << table.shifts[propIdx]);
+            return table.states[targetIdx];
         }
-        int oldInternal = ((Property) property).getInternalIndex(currentVal);
-        int targetIdx = this.papi$stateIndex + (newInternal - oldInternal) * table.strides[propIdx];
-        return table.states[targetIdx];
+        int stride = table.strides[propIdx];
+        int oldInternal = (curIdx / stride) % count;
+        return table.states[curIdx + (newInternal - oldInternal) * stride];
     }
 }

@@ -2,6 +2,7 @@ package net.ashpapi.papioptimization.mixin.worldgen;
 
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import java.util.List;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.levelgen.structure.BoundingBox;
 import net.minecraft.world.level.levelgen.structure.StructurePiece;
@@ -15,14 +16,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-import java.util.List;
-
-/**
- * Eliminates O(N^2) sequential scans in StructurePiecesBuilder.findCollisionPiece
- * by introducing a chunk-bucket spatial index for structures with >= 16 pieces.
- *
- * Preserves 100% deterministic vanilla parity by testing pieces in strict insertion order.
- */
 @Mixin(value = StructurePiecesBuilder.class, priority = 1500)
 public abstract class StructurePiecesBuilderMixin {
 
@@ -64,7 +57,7 @@ public abstract class StructurePiecesBuilderMixin {
     @Inject(method = "findCollisionPiece", at = @At("HEAD"), cancellable = true)
     private void papi$fastFindCollisionPiece(BoundingBox box, CallbackInfoReturnable<StructurePiece> cir) {
         if (this.pieces.size() < 16 || this.papi$chunkSpatialIndex == null) {
-            return; // fall back to standard linear scan
+            return;
         }
 
         int lowestCollidingIdx = Integer.MAX_VALUE;
@@ -85,10 +78,10 @@ public abstract class StructurePiecesBuilderMixin {
                             StructurePiece candidate = this.pieces.get(idx);
                             if (candidate.getBoundingBox().intersects(box)) {
                                 lowestCollidingIdx = idx;
-                                break; // sorted ascending, no smaller index exists in this bucket
+                                break;
                             }
                         } else {
-                            break; // remaining indices in bucket are >= lowestCollidingIdx
+                            break;
                         }
                     }
                 }

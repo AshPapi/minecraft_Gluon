@@ -3,25 +3,13 @@ package net.ashpapi.papioptimization.physics;
 import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
 
-/**
- * Branch-optimized Continuous 1D Sweep Collision for Axis-Aligned Bounding Boxes.
- *
- * Mathematically identical to Vanilla Minecraft's VoxelShape.collide for single-box shapes,
- * but replaces axis-cycling, coordinate-list binary searches (findIndex), and 3D voxel grid
- * bitset loops with direct O(1) continuous interval overlap tests.
- *
- * Preserves 100% Vanilla physics parity down to 1.0E-7 floating-point precision.
- */
 public final class FastBoxCollision {
 
     public static final double EPSILON = 1.0E-7;
 
-    private FastBoxCollision() {}
+    private FastBoxCollision() {
+    }
 
-    /**
-     * Computes the maximum allowed movement distance for moving bounding box along the given axis
-     * when obstructed by a static collision box.
-     */
     public static double collideSingleBox(Direction.Axis axis, AABB moving, AABB box, double distance) {
         if (Math.abs(distance) < EPSILON) {
             return 0.0;
@@ -29,49 +17,61 @@ public final class FastBoxCollision {
 
         switch (axis) {
             case X -> {
-                if (moving.minY < box.maxY - EPSILON && moving.maxY > box.minY + EPSILON &&
-                    moving.minZ < box.maxZ - EPSILON && moving.maxZ > box.minZ + EPSILON) {
-                    if (distance > 0.0 && moving.maxX <= box.minX + EPSILON) {
-                        double diff = box.minX - moving.maxX;
-                        if (diff < distance) {
-                            distance = diff;
+                if (!(moving.maxY - EPSILON < box.minY) && (moving.minY + EPSILON < box.maxY)
+                        && !(moving.maxZ - EPSILON < box.minZ) && (moving.minZ + EPSILON < box.maxZ)) {
+                    if (distance > 0.0) {
+                        if (moving.maxX - EPSILON < box.minX) {
+                            double diff = box.minX - moving.maxX;
+                            if (diff >= -EPSILON) {
+                                return Math.min(distance, diff);
+                            }
                         }
-                    } else if (distance < 0.0 && moving.minX >= box.maxX - EPSILON) {
-                        double diff = box.maxX - moving.minX;
-                        if (diff > distance) {
-                            distance = diff;
+                    } else if (distance < 0.0) {
+                        if (!(moving.minX + EPSILON < box.maxX)) {
+                            double diff = box.maxX - moving.minX;
+                            if (diff <= EPSILON) {
+                                return Math.max(distance, diff);
+                            }
                         }
                     }
                 }
             }
             case Y -> {
-                if (moving.minX < box.maxX - EPSILON && moving.maxX > box.minX + EPSILON &&
-                    moving.minZ < box.maxZ - EPSILON && moving.maxZ > box.minZ + EPSILON) {
-                    if (distance > 0.0 && moving.maxY <= box.minY + EPSILON) {
-                        double diff = box.minY - moving.maxY;
-                        if (diff < distance) {
-                            distance = diff;
+                if (!(moving.maxX - EPSILON < box.minX) && (moving.minX + EPSILON < box.maxX)
+                        && !(moving.maxZ - EPSILON < box.minZ) && (moving.minZ + EPSILON < box.maxZ)) {
+                    if (distance > 0.0) {
+                        if (moving.maxY - EPSILON < box.minY) {
+                            double diff = box.minY - moving.maxY;
+                            if (diff >= -EPSILON) {
+                                return Math.min(distance, diff);
+                            }
                         }
-                    } else if (distance < 0.0 && moving.minY >= box.maxY - EPSILON) {
-                        double diff = box.maxY - moving.minY;
-                        if (diff > distance) {
-                            distance = diff;
+                    } else if (distance < 0.0) {
+                        if (!(moving.minY + EPSILON < box.maxY)) {
+                            double diff = box.maxY - moving.minY;
+                            if (diff <= EPSILON) {
+                                return Math.max(distance, diff);
+                            }
                         }
                     }
                 }
             }
             case Z -> {
-                if (moving.minX < box.maxX - EPSILON && moving.maxX > box.minX + EPSILON &&
-                    moving.minY < box.maxY - EPSILON && moving.maxY > box.minY + EPSILON) {
-                    if (distance > 0.0 && moving.maxZ <= box.minZ + EPSILON) {
-                        double diff = box.minZ - moving.maxZ;
-                        if (diff < distance) {
-                            distance = diff;
+                if (!(moving.maxX - EPSILON < box.minX) && (moving.minX + EPSILON < box.maxX)
+                        && !(moving.maxY - EPSILON < box.minY) && (moving.minY + EPSILON < box.maxY)) {
+                    if (distance > 0.0) {
+                        if (moving.maxZ - EPSILON < box.minZ) {
+                            double diff = box.minZ - moving.maxZ;
+                            if (diff >= -EPSILON) {
+                                return Math.min(distance, diff);
+                            }
                         }
-                    } else if (distance < 0.0 && moving.minZ >= box.maxZ - EPSILON) {
-                        double diff = box.maxZ - moving.minZ;
-                        if (diff > distance) {
-                            distance = diff;
+                    } else if (distance < 0.0) {
+                        if (!(moving.minZ + EPSILON < box.maxZ)) {
+                            double diff = box.maxZ - moving.minZ;
+                            if (diff <= EPSILON) {
+                                return Math.max(distance, diff);
+                            }
                         }
                     }
                 }

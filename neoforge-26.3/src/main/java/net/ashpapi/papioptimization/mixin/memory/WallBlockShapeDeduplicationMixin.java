@@ -1,9 +1,14 @@
 package net.ashpapi.papioptimization.mixin.memory;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
+import net.ashpapi.papioptimization.memory.PapiShapeCanonicalizer;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.WallBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.block.state.properties.EnumProperty;
 import net.minecraft.world.level.block.state.properties.WallSide;
@@ -16,10 +21,6 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Function;
 
 @Mixin(value = WallBlock.class, priority = 1500)
 public abstract class WallBlockShapeDeduplicationMixin {
@@ -34,8 +35,22 @@ public abstract class WallBlockShapeDeduplicationMixin {
     private static final Map<Long, Function<BlockState, VoxelShape>> PAPI$WALL_SHAPE_FUNCTIONS = new ConcurrentHashMap<>(4);
 
     @Inject(method = "makeShapes", at = @At("HEAD"), cancellable = true)
-    private void papi$deduplicateWallShapes(float postHeight, float lowWallHeight, CallbackInfoReturnable<Function<BlockState, VoxelShape>> cir) {
-        long key = ((long) Float.floatToRawIntBits(postHeight) << 32) | (Float.floatToRawIntBits(lowWallHeight) & 0xFFFFFFFFL);
+    private void papi$deduplicateWallShapes(
+            float postHeight,
+            float lowWallHeight,
+            CallbackInfoReturnable<Function<BlockState, VoxelShape>> cir
+    ) {
+        StateDefinition<Block, BlockState> stateDef = ((Block) (Object) this).getStateDefinition();
+        if (stateDef == null
+                || stateDef.getProperty("up") != UP
+                || stateDef.getProperty("north") != NORTH
+                || stateDef.getProperty("east") != EAST
+                || stateDef.getProperty("south") != SOUTH
+                || stateDef.getProperty("west") != WEST) {
+            return;
+        }
+        long key = ((long) Float.floatToRawIntBits(postHeight) << 32)
+                | (Float.floatToRawIntBits(lowWallHeight) & 0xFFFFFFFFL);
         Function<BlockState, VoxelShape> cached = PAPI$WALL_SHAPE_FUNCTIONS.computeIfAbsent(key, k -> {
             VoxelShape post = Block.column(8.0, 0.0, postHeight);
             Map<Direction, VoxelShape> low = Shapes.rotateHorizontal(Block.boxZ(6.0, 0.0, lowWallHeight, 0.0, 11.0));
@@ -54,7 +69,7 @@ public abstract class WallBlockShapeDeduplicationMixin {
                             for (int w = 0; w < 3; w++) {
                                 VoxelShape sW = papi$appendSide(sS, Direction.WEST, sides[w], low, tall);
                                 int idx = up * 81 + n * 27 + e * 9 + s * 3 + w;
-                                table[idx] = sW;
+                                table[idx] = PapiShapeCanonicalizer.internShape(sW);
                             }
                         }
                     }

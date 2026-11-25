@@ -2,11 +2,10 @@ package net.ashpapi.papioptimization.mixin.client;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.ashpapi.papioptimization.client.ebe.PapiBannerTintSource;
 import net.minecraft.client.color.block.BlockColors;
-import net.minecraft.client.color.block.BlockTintSource;
-import net.minecraft.client.color.block.BlockTintSources;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.item.DyeColor;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.AbstractBannerBlock;
 import net.minecraft.world.level.block.Block;
 import net.neoforged.api.distmarker.Dist;
@@ -26,18 +25,17 @@ public abstract class BlockColorsEbeMixin {
         if (colors == null) {
             return;
         }
-        List<BlockTintSource> dyeSources = new ArrayList<>(16);
-        for (int i = 0; i < 16; i++) {
-            dyeSources.add(BlockTintSources.constant(DyeColor.byId(i).getTextureDiffuseColor()));
-        }
         List<Block> banners = new ArrayList<>(32);
         for (Block block : BuiltInRegistries.BLOCK) {
-            if (block instanceof AbstractBannerBlock && block.getClass().getName().startsWith("net.minecraft.")) {
-                banners.add(block);
+            if (block instanceof AbstractBannerBlock) {
+                Identifier key = BuiltInRegistries.BLOCK.getKey(block);
+                if (key != null && "minecraft".equals(key.getNamespace())) {
+                    banners.add(block);
+                }
             }
         }
         if (!banners.isEmpty()) {
-            colors.register(dyeSources, banners.toArray(new Block[0]));
+            colors.register(List.of(PapiBannerTintSource.INSTANCE), banners.toArray(new Block[0]));
         }
     }
 }

@@ -2,6 +2,7 @@ package net.ashpapi.papioptimization.mixin.entity;
 
 import java.util.EnumSet;
 import net.ashpapi.papioptimization.access.WrappedGoalFlagMask;
+import net.ashpapi.papioptimization.ai.PapiGoalFlagClassCache;
 import net.minecraft.world.entity.ai.goal.Goal;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -22,22 +23,10 @@ public abstract class GoalFlagMixin implements WrappedGoalFlagMask {
     public abstract EnumSet<Goal.Flag> getFlags();
 
     @Unique
-    private static final ClassValue<Boolean> PAPI$STANDARD_GET_FLAGS = new ClassValue<>() {
-        @Override
-        protected Boolean computeValue(Class<?> type) {
-            try {
-                return type.getMethod("getFlags").getDeclaringClass() == Goal.class;
-            } catch (Throwable ignored) {
-                return Boolean.FALSE;
-            }
-        }
-    };
-
-    @Unique
     private long papi$flagMask = 0L;
 
     @Unique
-    private final boolean papi$standardFlags = PAPI$STANDARD_GET_FLAGS.get(this.getClass());
+    private final boolean papi$standardFlags = PapiGoalFlagClassCache.hasStandardGetFlags(this.getClass());
 
     @Inject(method = "setFlags", at = @At("RETURN"))
     private void papi$onSetFlags(EnumSet<Goal.Flag> requiredControlFlags, CallbackInfo ci) {

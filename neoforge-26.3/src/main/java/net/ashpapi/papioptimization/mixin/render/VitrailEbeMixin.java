@@ -20,10 +20,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(targets = "net.caffeinemc.mods.sodium.client.render.chunk.compile.tasks.ChunkBuilderMeshingTask", priority = 1500, remap = false)
 public abstract class VitrailEbeMixin {
 
-    static {
-        PapiSodiumEbeBridge.init("vitrail");
-    }
-
     @WrapMethod(
         method = "execute(Lnet/caffeinemc/mods/sodium/client/render/chunk/compile/ChunkBuildContext;Lnet/caffeinemc/mods/sodium/client/util/task/CancellationToken;)Lnet/caffeinemc/mods/sodium/client/render/chunk/compile/ChunkBuildOutput;",
         remap = false,
@@ -35,7 +31,7 @@ public abstract class VitrailEbeMixin {
             @Coerce Object cancellationToken,
             Operation<Object> original
     ) {
-        PapiSodiumEbeBridge.beginMeshTask();
+        PapiSodiumEbeBridge.beginMeshTask("vitrail");
         Object result = null;
         try {
             result = original.call(buildContext, cancellationToken);

@@ -3,6 +3,8 @@ package net.ashpapi.papioptimization.worldgen;
 import it.unimi.dsi.fastutil.doubles.DoubleList;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.core.Direction;
 import net.minecraft.util.Mth;
 import net.minecraft.world.level.ChunkPos;
@@ -12,16 +14,6 @@ import net.minecraft.world.phys.shapes.BitSetDiscreteVoxelShape;
 import net.minecraft.world.phys.shapes.CubePointRange;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
-import java.util.ArrayList;
-import java.util.List;
-
-/**
- * High-performance spatial representation of free space during Jigsaw structure assembly.
- * Replaces vanilla VoxelShape CSG (BooleanOp.ONLY_FIRST / ONLY_SECOND) with an exact
- * bounding-box spatial containment and collision structure.
- *
- * 100% deterministic worldgen parity with vanilla.
- */
 public class FastJigsawSpace extends VoxelShape {
     private static final CubePointRange COORDS = new CubePointRange(1);
 
@@ -77,20 +69,13 @@ public class FastJigsawSpace extends VoxelShape {
         );
     }
 
-    /**
-     * Determines whether targetBB is outside the allowed enclosing space or intersects
-     * any previously placed piece.
-     * Corresponds to: Shapes.joinIsNotEmpty(childrenFree, Shapes.create(targetBB.deflate(0.25)), BooleanOp.ONLY_SECOND)
-     */
     public boolean isCollidingOrOutside(BoundingBox targetBB) {
-        // 1. Confinement check: candidate must be strictly within outer bounds
         if (targetBB.minX() < this.minX || targetBB.maxX() + 1 > this.maxX
                 || targetBB.minY() < this.minY || targetBB.maxY() + 1 > this.maxY
                 || targetBB.minZ() < this.minZ || targetBB.maxZ() + 1 > this.maxZ) {
             return true;
         }
 
-        // 2. Intersection check against placed pieces
         int count = this.placedBoxes.size();
         if (count < 16 || this.chunkBuckets == null) {
             for (int i = 0; i < count; i++) {
@@ -124,10 +109,6 @@ public class FastJigsawSpace extends VoxelShape {
         return false;
     }
 
-    /**
-     * Adds an accepted piece's bounding box to the placed set (subtracts it from free space).
-     * Corresponds to: childrenFree.setValue(Shapes.joinUnoptimized(childrenFree, Shapes.create(targetBB), BooleanOp.ONLY_FIRST))
-     */
     public void addPiece(BoundingBox targetBB) {
         this.placedBoxes.add(targetBB);
 

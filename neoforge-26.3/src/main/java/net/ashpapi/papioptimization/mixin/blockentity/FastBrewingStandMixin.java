@@ -13,26 +13,29 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * PapiOptimization Fast Brewing Stand Check:
- * Eliminates redundant recipe checking and 3x BrewingInput allocations per tick
- * when a brewing stand is idle and missing fuel, ingredients, or potion bottles.
- * 100% vanilla parity.
- */
 @Mixin(value = BrewingStandBlockEntity.class, priority = 1500)
 public abstract class FastBrewingStandMixin {
 
-    @Shadow private NonNullList<ItemStack> items;
-    @Shadow private int brewTime;
-    @Shadow private int fuel;
+    @Shadow
+    private NonNullList<ItemStack> items;
+
+    @Shadow
+    private int brewTime;
+
+    @Shadow
+    private int fuel;
 
     @Inject(method = "serverTick", at = @At("HEAD"), cancellable = true)
     private static void papi$fastBrewingCheck(
-            ServerLevel level, BlockPos pos, BlockState state, BrewingStandBlockEntity stand, CallbackInfo ci) {
+            ServerLevel level,
+            BlockPos pos,
+            BlockState state,
+            BrewingStandBlockEntity stand,
+            CallbackInfo ci
+    ) {
         FastBrewingStandMixin access = (FastBrewingStandMixin) (Object) stand;
 
-        // Active brewing process: let vanilla tick
-        if (access.brewTime > 0) {
+        if (access.brewTime > 0 || access.items.size() < 5 || !(state.getBlock() instanceof BrewingStandBlock)) {
             return;
         }
 
@@ -41,25 +44,21 @@ public abstract class FastBrewingStandMixin {
         }
 
         for (int i = 0; i < 3; i++) {
-            if (state.getValue(BrewingStandBlock.HAS_BOTTLE[i]) != !access.items.get(i).isEmpty()) {
+            if (state.getValueOrElse(BrewingStandBlock.HAS_BOTTLE[i], Boolean.FALSE) != !access.items.get(i).isEmpty()) {
                 return;
             }
         }
 
-        // Slot 3: Ingredient, Slot 4: Fuel, Slots 0..2: Potions
-        ItemStack ingredient = access.items.get(3);
-        if (ingredient.isEmpty()) {
+        if (access.items.get(3).isEmpty()) {
             ci.cancel();
             return;
         }
 
-        ItemStack fuelItem = access.items.get(4);
-        if (access.fuel <= 0 && fuelItem.isEmpty()) {
+        if (access.fuel <= 0 && access.items.get(4).isEmpty()) {
             ci.cancel();
             return;
         }
 
-        // If all 3 potion slots are empty, brewing cannot occur
         if (access.items.get(0).isEmpty() && access.items.get(1).isEmpty() && access.items.get(2).isEmpty()) {
             ci.cancel();
         }

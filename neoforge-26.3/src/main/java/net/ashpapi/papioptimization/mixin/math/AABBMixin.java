@@ -1,8 +1,11 @@
 package net.ashpapi.papioptimization.mixin.math;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import java.util.Optional;
 import net.ashpapi.papioptimization.math.FastRayAABB;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
@@ -13,28 +16,59 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-/**
- * Eliminates redundant AABB allocations when identity / zero-delta operations occur.
- * Accelerates AABB.clip with Williams Hardware Ray-AABB slab method.
- */
 @Mixin(value = AABB.class, priority = 1500)
 public abstract class AABBMixin {
 
-    @Shadow @Final public double minX;
-    @Shadow @Final public double minY;
-    @Shadow @Final public double minZ;
-    @Shadow @Final public double maxX;
-    @Shadow @Final public double maxY;
-    @Shadow @Final public double maxZ;
+    @Shadow
+    @Final
+    public double minX;
+
+    @Shadow
+    @Final
+    public double minY;
+
+    @Shadow
+    @Final
+    public double minZ;
+
+    @Shadow
+    @Final
+    public double maxX;
+
+    @Shadow
+    @Final
+    public double maxY;
+
+    @Shadow
+    @Final
+    public double maxZ;
+
+    @WrapMethod(method = "min")
+    private double papi$fastMin(Direction.Axis axis, Operation<Double> original) {
+        return switch (axis.ordinal()) {
+            case 0 -> this.minX;
+            case 1 -> this.minY;
+            default -> this.minZ;
+        };
+    }
+
+    @WrapMethod(method = "max")
+    private double papi$fastMax(Direction.Axis axis, Operation<Double> original) {
+        return switch (axis.ordinal()) {
+            case 0 -> this.maxX;
+            case 1 -> this.maxY;
+            default -> this.maxZ;
+        };
+    }
 
     @Inject(method = "intersects(Lnet/minecraft/core/BlockPos;)Z", at = @At("HEAD"), cancellable = true)
     private void papi$fastIntersectsBlockPos(BlockPos pos, CallbackInfoReturnable<Boolean> cir) {
         int x = pos.getX();
         int y = pos.getY();
         int z = pos.getZ();
-        cir.setReturnValue(this.minX < (double)(x + 1) && this.maxX > (double)x
-                && this.minY < (double)(y + 1) && this.maxY > (double)y
-                && this.minZ < (double)(z + 1) && this.maxZ > (double)z);
+        cir.setReturnValue(this.minX < (double) (x + 1) && this.maxX > (double) x
+                && this.minY < (double) (y + 1) && this.maxY > (double) y
+                && this.minZ < (double) (z + 1) && this.maxZ > (double) z);
     }
 
     @Inject(method = "clip(Ljava/lang/Iterable;Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/world/phys/Vec3;Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/phys/BlockHitResult;", at = @At("HEAD"), cancellable = true)

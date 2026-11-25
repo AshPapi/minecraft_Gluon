@@ -35,7 +35,7 @@ public abstract class TemptingSensorMixin {
             ci.cancel();
             return;
         }
-        double range = (float) body.getAttributeValue(Attributes.TEMPT_RANGE);
+        double range = body.getAttributeValue(Attributes.TEMPT_RANGE);
         double maxDistSqr = range * range;
         TargetingConditions targeting = null;
         ServerPlayer nearest = null;

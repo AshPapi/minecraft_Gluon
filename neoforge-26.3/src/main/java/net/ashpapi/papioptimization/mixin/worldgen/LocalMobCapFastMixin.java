@@ -10,7 +10,10 @@ import org.spongepowered.asm.mixin.Unique;
 public abstract class LocalMobCapFastMixin {
 
     @Unique
-    private final int[] papi$counts = new int[MobCategory.values().length];
+    private static final int PAPI$CATEGORY_COUNT = MobCategory.values().length;
+
+    @Unique
+    private final int[] papi$counts = new int[PAPI$CATEGORY_COUNT];
 
     @WrapMethod(method = "add")
     private void papi$fastAdd(MobCategory category, Operation<Void> original) {

@@ -13,6 +13,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = BellBlockEntity.class, priority = 1500)
 public abstract class BellBlockEntityMixin {
 
+    @Shadow public int ticks;
     @Shadow public boolean shaking;
     @Shadow private boolean resonating;
 
@@ -20,16 +21,7 @@ public abstract class BellBlockEntityMixin {
     private static void papi$sleepIdleServerBell(
             Level level, BlockPos pos, BlockState state, BellBlockEntity bell, CallbackInfo ci) {
         BellBlockEntityMixin access = (BellBlockEntityMixin) (Object) bell;
-        if (!access.shaking && !access.resonating) {
-            ci.cancel();
-        }
-    }
-
-    @Inject(method = "clientTick", at = @At("HEAD"), cancellable = true)
-    private static void papi$sleepIdleClientBell(
-            Level level, BlockPos pos, BlockState state, BellBlockEntity bell, CallbackInfo ci) {
-        BellBlockEntityMixin access = (BellBlockEntityMixin) (Object) bell;
-        if (!access.shaking && !access.resonating) {
+        if (!access.shaking && !access.resonating && access.ticks == 0) {
             ci.cancel();
         }
     }

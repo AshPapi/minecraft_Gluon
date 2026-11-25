@@ -3,10 +3,13 @@ package net.ashpapi.papioptimization.mixin.client;
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import org.joml.Matrix3x2fc;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
+@OnlyIn(Dist.CLIENT)
 @Mixin(value = VertexConsumer.class, priority = 1500)
 public interface VertexConsumerFastMixin {
 

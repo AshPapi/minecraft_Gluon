@@ -2,6 +2,7 @@ package net.ashpapi.papioptimization.mixin.crafting;
 
 import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import net.ashpapi.papioptimization.access.PapiContainerMenuAccess;
 import net.ashpapi.papioptimization.access.PapiCraftingMenuCache;
 import net.ashpapi.papioptimization.core.PapiRecipeEpoch;
 import net.minecraft.server.level.ServerLevel;
@@ -14,6 +15,9 @@ import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(value = CraftingMenu.class, priority = 1500)
 public abstract class CraftingMenuCacheMixin {
@@ -30,27 +34,74 @@ public abstract class CraftingMenuCacheMixin {
             Operation<Void> original
     ) {
         int epoch = PapiRecipeEpoch.current();
-        PapiCraftingMenuCache cache = (menu instanceof PapiCraftingMenuCache c) ? c : null;
+        PapiCraftingMenuCache resultCache = (resultSlots instanceof PapiCraftingMenuCache rc) ? rc : null;
+        PapiCraftingMenuCache menuCache = (menu instanceof PapiCraftingMenuCache mc) ? mc : null;
+        PapiCraftingMenuCache primaryCache = resultCache != null ? resultCache : menuCache;
+
         RecipeHolder<CraftingRecipe> effectiveLast = lastRecipe;
-        if (effectiveLast == null && cache != null) {
-            if (cache.papi$getLastRecipeEpoch() == epoch) {
-                effectiveLast = cache.papi$getLastRecipe();
+        if (effectiveLast == null && primaryCache != null) {
+            if (primaryCache.papi$getLastRecipeEpoch() == epoch) {
+                effectiveLast = primaryCache.papi$getLastRecipe();
             } else {
-                cache.papi$setLastRecipe(null);
+                primaryCache.papi$setLastRecipe(null);
             }
-        }
-        original.call(menu, level, player, craftSlots, resultSlots, effectiveLast);
-        if (cache != null) {
-            if (resultSlots.getItem(0).isEmpty() || PapiRecipeEpoch.current() != epoch) {
-                cache.papi$setLastRecipe(null);
-                cache.papi$setLastRecipeEpoch(PapiRecipeEpoch.current());
-            } else {
-                RecipeHolder<?> used = resultSlots.getRecipeUsed();
-                if (used != null && used.value() instanceof CraftingRecipe) {
-                    cache.papi$setLastRecipe((RecipeHolder<CraftingRecipe>) used);
-                    cache.papi$setLastRecipeEpoch(epoch);
+            if (effectiveLast == null && menuCache != null && menuCache != primaryCache) {
+                if (menuCache.papi$getLastRecipeEpoch() == epoch) {
+                    effectiveLast = menuCache.papi$getLastRecipe();
+                } else {
+                    menuCache.papi$setLastRecipe(null);
                 }
             }
+        }
+
+        original.call(menu, level, player, craftSlots, resultSlots, effectiveLast);
+
+        int postEpoch = PapiRecipeEpoch.current();
+        if (postEpoch != epoch) {
+            if (resultCache != null) {
+                resultCache.papi$setLastRecipe(null);
+                resultCache.papi$setLastRecipeEpoch(postEpoch);
+            }
+            if (menuCache != null) {
+                menuCache.papi$setLastRecipe(null);
+                menuCache.papi$setLastRecipeEpoch(postEpoch);
+            }
+        } else if (!resultSlots.getItem(0).isEmpty()) {
+            RecipeHolder<?> used = resultSlots.getRecipeUsed();
+            RecipeHolder<CraftingRecipe> nextCached =
+                    (used != null && used.value() instanceof CraftingRecipe)
+                            ? (RecipeHolder<CraftingRecipe>) used
+                            : null;
+            if (resultCache != null) {
+                resultCache.papi$setLastRecipe(nextCached);
+                resultCache.papi$setLastRecipeEpoch(postEpoch);
+            }
+            if (menuCache != null) {
+                menuCache.papi$setLastRecipe(nextCached);
+                menuCache.papi$setLastRecipeEpoch(postEpoch);
+            }
+        }
+    }
+
+    @Inject(
+            method = "slotChangedCraftingGrid",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/world/inventory/AbstractContainerMenu;setRemoteSlot(ILnet/minecraft/world/item/ItemStack;)V"
+            ),
+            cancellable = true
+    )
+    private static void papi$suppressRedundantSetSlotPacket(
+            AbstractContainerMenu menu,
+            ServerLevel level,
+            Player player,
+            CraftingContainer craftSlots,
+            ResultContainer resultSlots,
+            @Nullable RecipeHolder<CraftingRecipe> lastRecipe,
+            CallbackInfo ci
+    ) {
+        if (menu instanceof PapiContainerMenuAccess access && access.papi$isSuppressingRemoteUpdates()) {
+            ci.cancel();
         }
     }
 }

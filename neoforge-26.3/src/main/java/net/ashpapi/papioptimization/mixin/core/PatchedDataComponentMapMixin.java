@@ -34,45 +34,28 @@ public abstract class PatchedDataComponentMapMixin {
     private volatile int papi$modCount = 0;
 
     @Unique
-    private void papi$collapseEmptyPatch() {
+    private void papi$afterMutation() {
+        this.papi$modCount++;
+        this.papi$hashState = 0L;
         if (!this.copyOnWrite && this.patch.isEmpty()) {
             this.patch = Reference2ObjectMaps.emptyMap();
             this.copyOnWrite = true;
         }
     }
 
-    @Inject(method = "<init>(Lnet/minecraft/core/component/DataComponentMap;Lit/unimi/dsi/fastutil/objects/Reference2ObjectMap;Z)V", at = @At("RETURN"))
-    private void papi$canonicalizeEmptyCtorPatch(DataComponentMap proto, Reference2ObjectMap<DataComponentType<?>, Object> patch, boolean cow, CallbackInfo ci) {
+    @Inject(
+        method = "<init>(Lnet/minecraft/core/component/DataComponentMap;Lit/unimi/dsi/fastutil/objects/Reference2ObjectMap;Z)V",
+        at = @At("RETURN")
+    )
+    private void papi$canonicalizeEmptyCtorPatch(
+            DataComponentMap proto,
+            Reference2ObjectMap<DataComponentType<?>, Object> patch,
+            boolean cow,
+            CallbackInfo ci
+    ) {
         if (this.patch.isEmpty()) {
             this.patch = Reference2ObjectMaps.emptyMap();
             this.copyOnWrite = true;
-        }
-    }
-
-    @Inject(method = "set(Lnet/minecraft/core/component/DataComponentType;Ljava/lang/Object;)Ljava/lang/Object;", at = @At("RETURN"))
-    private void papi$collapseAfterSet(CallbackInfoReturnable<Object> cir) {
-        this.papi$collapseEmptyPatch();
-    }
-
-    @Inject(method = "remove", at = @At("RETURN"))
-    private void papi$collapseAfterRemove(CallbackInfoReturnable<Object> cir) {
-        this.papi$collapseEmptyPatch();
-    }
-
-    @Inject(method = "applyPatch(Lnet/minecraft/core/component/DataComponentPatch;)V", at = @At("RETURN"))
-    private void papi$collapseAfterApplyPatch(DataComponentPatch patch, CallbackInfo ci) {
-        this.papi$collapseEmptyPatch();
-    }
-
-    @Inject(method = "clearPatch", at = @At("RETURN"))
-    private void papi$collapseAfterClearPatch(CallbackInfo ci) {
-        this.papi$collapseEmptyPatch();
-    }
-
-    @Inject(method = "get", at = @At("HEAD"), cancellable = true)
-    private <T> void papi$fastGet(DataComponentType<? extends T> type, CallbackInfoReturnable<T> cir) {
-        if (this.patch.isEmpty()) {
-            cir.setReturnValue(this.prototype.get(type));
         }
     }
 
@@ -82,11 +65,41 @@ public abstract class PatchedDataComponentMapMixin {
         this.papi$hashState = 0L;
     }
 
+    @Inject(method = "set(Lnet/minecraft/core/component/DataComponentType;Ljava/lang/Object;)Ljava/lang/Object;", at = @At("RETURN"))
+    private void papi$afterSet(CallbackInfoReturnable<Object> cir) {
+        this.papi$afterMutation();
+    }
+
+    @Inject(method = "remove", at = @At("RETURN"))
+    private void papi$afterRemove(CallbackInfoReturnable<Object> cir) {
+        this.papi$afterMutation();
+    }
+
+    @Inject(method = "applyPatch(Lnet/minecraft/core/component/DataComponentPatch;)V", at = @At("RETURN"))
+    private void papi$afterApplyPatch(DataComponentPatch patch, CallbackInfo ci) {
+        this.papi$afterMutation();
+    }
+
+    @Inject(method = "clearPatch", at = @At("RETURN"))
+    private void papi$afterClearPatch(CallbackInfo ci) {
+        this.papi$afterMutation();
+    }
+
     @Inject(method = "restorePatch", at = @At("RETURN"))
-    private void papi$invalidateHashOnRestore(DataComponentPatch patch, CallbackInfo ci) {
-        this.papi$modCount++;
-        this.papi$hashState = 0L;
-        this.papi$collapseEmptyPatch();
+    private void papi$afterRestorePatch(DataComponentPatch patch, CallbackInfo ci) {
+        this.papi$afterMutation();
+    }
+
+    @Inject(method = "setAll", at = @At("RETURN"))
+    private void papi$afterSetAll(DataComponentMap map, CallbackInfo ci) {
+        this.papi$afterMutation();
+    }
+
+    @Inject(method = "get", at = @At("HEAD"), cancellable = true)
+    private <T> void papi$fastGet(DataComponentType<? extends T> type, CallbackInfoReturnable<T> cir) {
+        if (this.patch.isEmpty()) {
+            cir.setReturnValue(this.prototype.get(type));
+        }
     }
 
     @Inject(method = "equals", at = @At("HEAD"), cancellable = true)

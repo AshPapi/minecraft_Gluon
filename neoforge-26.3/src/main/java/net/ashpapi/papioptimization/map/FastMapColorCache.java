@@ -2,10 +2,6 @@ package net.ashpapi.papioptimization.map;
 
 import net.minecraft.world.level.material.MapColor;
 
-/**
- * Precalculated 256-entry ARGB lookup table for map texture uploads.
- * Eliminates repeated branch-heavy color calculation in MapTextureManager$MapInstance.
- */
 public final class FastMapColorCache {
     private static final int[] PACKED_COLOR_CACHE = new int[256];
 
@@ -19,5 +15,9 @@ public final class FastMapColorCache {
 
     public static int getArgbColor(int packedId) {
         return PACKED_COLOR_CACHE[packedId & 0xFF];
+    }
+
+    public static boolean isTransparent(byte packedByte) {
+        return (PACKED_COLOR_CACHE[packedByte & 0xFF] >>> 24) == 0;
     }
 }

@@ -2,12 +2,14 @@ package net.ashpapi.papioptimization.mixin.entity;
 
 import it.unimi.dsi.fastutil.objects.Reference2ObjectOpenHashMap;
 import java.util.Map;
+import net.ashpapi.papioptimization.access.PapiBrainMemoryTracker;
 import net.ashpapi.papioptimization.core.PapiConditionSnapshot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.Brain;
 import net.minecraft.world.entity.ai.behavior.Behavior;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
 import net.minecraft.world.entity.ai.memory.MemoryStatus;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Mutable;
@@ -25,10 +27,16 @@ public abstract class BehaviorMemoryCacheMixin<E extends LivingEntity> {
     protected Map<MemoryModuleType<?>, MemoryStatus> entryCondition;
 
     @Unique
-    private static final PapiConditionSnapshot PAPI$EMPTY_SNAPSHOT = new PapiConditionSnapshot(0, new MemoryModuleType<?>[0], new MemoryStatus[0]);
+    private volatile PapiConditionSnapshot papi$snapshot = PapiConditionSnapshot.EMPTY;
 
     @Unique
-    private volatile PapiConditionSnapshot papi$snapshot = PAPI$EMPTY_SNAPSHOT;
+    private @Nullable Brain<?> papi$lastBrain;
+
+    @Unique
+    private long papi$lastModCount;
+
+    @Unique
+    private boolean papi$lastResult;
 
     @Inject(method = "<init>(Ljava/util/Map;II)V", at = @At("RETURN"))
     private void papi$initConditionArrays(Map<MemoryModuleType<?>, MemoryStatus> entryCondition, int minDuration, int maxDuration, CallbackInfo ci) {
@@ -44,8 +52,9 @@ public abstract class BehaviorMemoryCacheMixin<E extends LivingEntity> {
     private PapiConditionSnapshot papi$rebuildSnapshot() {
         int size = this.entryCondition.size();
         if (size == 0) {
-            this.papi$snapshot = PAPI$EMPTY_SNAPSHOT;
-            return PAPI$EMPTY_SNAPSHOT;
+            this.papi$snapshot = PapiConditionSnapshot.EMPTY;
+            this.papi$lastModCount = 0L;
+            return PapiConditionSnapshot.EMPTY;
         }
         MemoryModuleType<?>[] keys = new MemoryModuleType<?>[size];
         MemoryStatus[] statuses = new MemoryStatus[size];
@@ -57,6 +66,7 @@ public abstract class BehaviorMemoryCacheMixin<E extends LivingEntity> {
         }
         PapiConditionSnapshot snap = new PapiConditionSnapshot(keys.length, keys, statuses);
         this.papi$snapshot = snap;
+        this.papi$lastModCount = 0L;
         return snap;
     }
 
@@ -74,14 +84,30 @@ public abstract class BehaviorMemoryCacheMixin<E extends LivingEntity> {
         }
 
         Brain<?> brain = body.getBrain();
-        MemoryModuleType<?>[] keys = snap.keys();
-        MemoryStatus[] statuses = snap.statuses();
-        for (int i = 0, len = keys.length; i < len; i++) {
-            if (!brain.checkMemory(keys[i], statuses[i])) {
-                cir.setReturnValue(false);
+        long modCount = 0L;
+        if (brain instanceof PapiBrainMemoryTracker tracker) {
+            modCount = tracker.papi$getMemoryModCount();
+            if (modCount != 0L && this.papi$lastBrain == brain && this.papi$lastModCount == modCount) {
+                cir.setReturnValue(this.papi$lastResult);
                 return;
             }
         }
-        cir.setReturnValue(true);
+
+        MemoryModuleType<?>[] keys = snap.keys();
+        MemoryStatus[] statuses = snap.statuses();
+        boolean result = true;
+        for (int i = 0, len = keys.length; i < len; i++) {
+            if (!brain.checkMemory(keys[i], statuses[i])) {
+                result = false;
+                break;
+            }
+        }
+
+        if (modCount != 0L) {
+            this.papi$lastBrain = brain;
+            this.papi$lastModCount = modCount;
+            this.papi$lastResult = result;
+        }
+        cir.setReturnValue(result);
     }
 }

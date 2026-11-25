@@ -9,12 +9,6 @@ import net.minecraft.world.level.lighting.LayerLightSectionStorage;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 
-/**
- * Optimizes neighbor section notification during setStoredLevel.
- * 67% of blocks in a 16x16x16 chunk section are internal (coordinates 1..14).
- * For internal blocks, SectionPos.aroundAndAtBlockPos can only ever produce the current section node.
- * This fast-path avoids the 8-way section boundary evaluation and redundant iterations.
- */
 @Mixin(value = LayerLightSectionStorage.class, priority = 1500)
 public abstract class LayerLightSectionStorageMixin {
 
@@ -26,14 +20,12 @@ public abstract class LayerLightSectionStorageMixin {
         )
     )
     private void papi$fastAroundAndAtBlockPos(long blockNode, LongConsumer consumer, Operation<Void> original) {
-        int x = BlockPos.getX(blockNode);
-        int y = BlockPos.getY(blockNode);
-        int z = BlockPos.getZ(blockNode);
-
-        // Fast-path: strictly interior to section (coordinates 1..14 in X, Y, Z)
-        if ((x & 15) != 0 && (x & 15) != 15 &&
-            (y & 15) != 0 && (y & 15) != 15 &&
-            (z & 15) != 0 && (z & 15) != 15) {
+        int x = BlockPos.getX(blockNode) & 15;
+        int y = BlockPos.getY(blockNode) & 15;
+        int z = BlockPos.getZ(blockNode) & 15;
+        if (Integer.compareUnsigned(x - 1, 14) < 0
+                && Integer.compareUnsigned(y - 1, 14) < 0
+                && Integer.compareUnsigned(z - 1, 14) < 0) {
             consumer.accept(SectionPos.blockToSection(blockNode));
         } else {
             original.call(blockNode, consumer);

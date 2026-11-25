@@ -6,9 +6,9 @@ public interface PapiEbeDynamicTracker {
 
     void papi$setEbeDynamic(boolean dynamic);
 
-    long papi$getEbeCloseGraceUntil();
+    int papi$getEbeRebuildTick();
 
-    void papi$setEbeCloseGraceUntil(long gameTime);
+    void papi$setEbeRebuildTick(int tick);
 
     boolean papi$isEbeBaked();
 

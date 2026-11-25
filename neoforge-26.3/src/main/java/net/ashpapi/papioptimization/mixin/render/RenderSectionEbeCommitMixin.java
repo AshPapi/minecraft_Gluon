@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import net.ashpapi.papioptimization.access.PapiEbeCompiledSection;
 import net.ashpapi.papioptimization.access.PapiEbeDynamicTracker;
+import net.ashpapi.papioptimization.client.ebe.PapiEbeRuntime;
 import net.minecraft.client.renderer.chunk.SectionMesh;
 import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 import net.neoforged.api.distmarker.Dist;
@@ -24,16 +25,14 @@ public abstract class RenderSectionEbeCommitMixin {
     @Final
     public AtomicReference<SectionMesh> sectionMesh;
 
-    @Inject(
-        method = "releaseSectionMesh(Lnet/minecraft/client/renderer/chunk/SectionMesh;)V",
-        at = @At("HEAD")
-    )
-    private void papi$clearEbeBakedStateOnRelease(SectionMesh oldMesh, CallbackInfo ci) {
-        if (oldMesh instanceof PapiEbeCompiledSection oldCompiled) {
-            List<PapiEbeDynamicTracker> oldBaked = oldCompiled.papi$getEbeBakedTrackers();
-            if (oldBaked != null) {
-                for (int i = 0, n = oldBaked.size(); i < n; i++) {
-                    oldBaked.get(i).papi$setEbeBaked(false);
+    @Inject(method = "reset()V", at = @At("HEAD"))
+    private void papi$clearEbeBakedStateOnReset(CallbackInfo ci) {
+        SectionMesh activeMesh = this.sectionMesh.get();
+        if (activeMesh instanceof PapiEbeCompiledSection compiled) {
+            List<PapiEbeDynamicTracker> baked = compiled.papi$getEbeBakedTrackers();
+            if (baked != null) {
+                for (int i = 0, n = baked.size(); i < n; i++) {
+                    baked.get(i).papi$setEbeBaked(false);
                 }
             }
         }
@@ -54,7 +53,7 @@ public abstract class RenderSectionEbeCommitMixin {
             List<PapiEbeDynamicTracker> newBaked = newCompiled.papi$getEbeBakedTrackers();
             if (newBaked != null) {
                 for (int i = 0, n = newBaked.size(); i < n; i++) {
-                    newBaked.get(i).papi$setEbeBaked(true);
+                    PapiEbeRuntime.onCommittedBakedTracker(newBaked.get(i));
                 }
             }
             List<PapiEbeDynamicTracker> newUnbaked = newCompiled.papi$getEbeUnbakedTrackers();

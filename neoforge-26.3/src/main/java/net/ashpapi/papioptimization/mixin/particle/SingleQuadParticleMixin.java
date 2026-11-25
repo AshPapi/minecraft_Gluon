@@ -1,18 +1,23 @@
 package net.ashpapi.papioptimization.mixin.particle;
 
-import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
-import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.Camera;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.renderer.state.level.QuadParticleRenderState;
 import net.minecraft.util.Mth;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
 import org.joml.Quaternionf;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+@OnlyIn(Dist.CLIENT)
 @Mixin(value = SingleQuadParticle.class, priority = 1500)
 public abstract class SingleQuadParticleMixin extends Particle {
 
@@ -34,20 +39,20 @@ public abstract class SingleQuadParticleMixin extends Particle {
     );
 
     @Unique
-    private static final ThreadLocal<Quaternionf> PAPI$QUAT = ThreadLocal.withInitial(Quaternionf::new);
+    private static final Quaternionf PAPI$RENDER_QUAT = new Quaternionf();
 
     protected SingleQuadParticleMixin(ClientLevel level, double x, double y, double z) {
         super(level, x, y, z);
     }
 
-    @WrapMethod(method = "extract")
+    @Inject(method = "extract", at = @At("HEAD"), cancellable = true)
     private void papi$fastExtract(
             QuadParticleRenderState state,
             Camera camera,
             float partialTick,
-            Operation<Void> original
+            CallbackInfo ci
     ) {
-        Quaternionf q = PAPI$QUAT.get();
+        Quaternionf q = RenderSystem.isOnRenderThread() ? PAPI$RENDER_QUAT : new Quaternionf();
         SingleQuadParticle.FacingCameraMode mode = this.getFacingCameraMode();
         if (mode == SingleQuadParticle.FacingCameraMode.LOOKAT_XYZ) {
             q.set(camera.rotation());
@@ -62,5 +67,6 @@ public abstract class SingleQuadParticleMixin extends Particle {
             q.rotateZ(Mth.lerp(partialTick, this.oRoll, this.roll));
         }
         this.extractRotatedQuad(state, camera, q, partialTick);
+        ci.cancel();
     }
 }

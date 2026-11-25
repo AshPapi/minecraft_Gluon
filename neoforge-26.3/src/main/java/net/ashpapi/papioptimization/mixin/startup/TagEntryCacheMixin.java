@@ -1,5 +1,7 @@
 package net.ashpapi.papioptimization.mixin.startup;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.resources.Identifier;
 import net.minecraft.tags.TagEntry;
 import net.minecraft.util.ExtraCodecs;
@@ -7,9 +9,6 @@ import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(value = TagEntry.class, priority = 1500)
 public abstract class TagEntryCacheMixin {
@@ -20,13 +19,15 @@ public abstract class TagEntryCacheMixin {
     @Unique
     private ExtraCodecs.TagOrElementLocation papi$cachedLocation;
 
-    @Inject(method = "elementOrTag", at = @At("HEAD"), cancellable = true)
-    private void papi$fastElementOrTag(CallbackInfoReturnable<ExtraCodecs.TagOrElementLocation> cir) {
+    @WrapMethod(method = "elementOrTag")
+    private ExtraCodecs.TagOrElementLocation papi$fastElementOrTag(
+            Operation<ExtraCodecs.TagOrElementLocation> original
+    ) {
         ExtraCodecs.TagOrElementLocation loc = this.papi$cachedLocation;
         if (loc == null) {
             loc = new ExtraCodecs.TagOrElementLocation(this.id, this.tag);
             this.papi$cachedLocation = loc;
         }
-        cir.setReturnValue(loc);
+        return loc;
     }
 }

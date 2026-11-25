@@ -5,9 +5,10 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.mojang.blaze3d.systems.RenderSystem;
 import java.util.Arrays;
 import net.ashpapi.papioptimization.client.PapiClientCaches;
+import net.ashpapi.papioptimization.client.PapiEmptyPreparedText;
 import net.ashpapi.papioptimization.client.PapiFontSequenceKey;
+import net.ashpapi.papioptimization.client.PapiSignRenderCache;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.util.FormattedCharSequence;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
@@ -15,10 +16,6 @@ import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 
-/**
- * PapiOptimization Font Width Fast-Path:
- * Early-exits for empty or null strings, bypassing StringSplitter invocation and floating-point ceil.
- */
 @OnlyIn(Dist.CLIENT)
 @Mixin(value = Font.class, priority = 1500)
 public abstract class FontMixin {
@@ -48,16 +45,7 @@ public abstract class FontMixin {
     private static final int PAPI$PREP_OUTLINE_MASK = PAPI$PREP_OUTLINE_SIZE - 1;
 
     @Unique
-    private static final Font.PreparedText PAPI$EMPTY_PREPARED = new Font.PreparedText() {
-        @Override
-        public void visit(Font.GlyphVisitor visitor) {
-        }
-
-        @Override
-        public @Nullable ScreenRectangle bounds() {
-            return null;
-        }
-    };
+    private static final Font.PreparedText PAPI$EMPTY_PREPARED = PapiEmptyPreparedText.INSTANCE;
 
     @Unique
     private final String[] papi$widthKeys = new String[PAPI$WIDTH_CACHE_SIZE];
@@ -256,6 +244,12 @@ public abstract class FontMixin {
         if (!RenderSystem.isOnRenderThread()) {
             return original.call(text, x, y, color, dropShadow, includeEmpty, backgroundColor);
         }
+        if (text instanceof PapiSignRenderCache.PreparedLine signLine) {
+            if (signLine.isKnownEmpty() && (backgroundColor & 0xFF000000) == 0) {
+                return PAPI$EMPTY_PREPARED;
+            }
+            return signLine.getOrPrepareMain((Font) (Object) this, x, y, color, dropShadow, includeEmpty, backgroundColor, original);
+        }
         PapiFontSequenceKey.Probe probe = this.papi$seqProbe;
         probe.reset();
         try {
@@ -323,6 +317,12 @@ public abstract class FontMixin {
         }
         if (!RenderSystem.isOnRenderThread()) {
             return original.call(text, x, y, outlineColor);
+        }
+        if (text instanceof PapiSignRenderCache.PreparedLine signLine) {
+            if (signLine.isKnownEmpty()) {
+                return PAPI$EMPTY_PREPARED;
+            }
+            return signLine.getOrPrepareOutline((Font) (Object) this, x, y, outlineColor, original);
         }
         PapiFontSequenceKey.Probe probe = this.papi$seqProbe;
         probe.reset();

@@ -24,9 +24,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(value = ChunkMap.class, priority = 1500)
 public abstract class ChunkMapAutosaveOptimizerMixin {
 
-    @Shadow private volatile Long2ObjectLinkedOpenHashMap<ChunkHolder> visibleChunkMap;
-    @Shadow @Final private Long2LongMap nextChunkSaveTime;
-    @Shadow @Final private ServerLevel level;
+    @Unique
+    private static final int PAPI$TRIM_PEAK_THRESHOLD = 1024;
+
+    @Shadow
+    private volatile Long2ObjectLinkedOpenHashMap<ChunkHolder> visibleChunkMap;
+
+    @Shadow
+    @Final
+    private Long2LongMap nextChunkSaveTime;
+
+    @Shadow
+    @Final
+    private ServerLevel level;
 
     @Shadow
     private boolean saveChunkIfNeeded(ChunkHolder chunk, long now) {
@@ -39,11 +49,15 @@ public abstract class ChunkMapAutosaveOptimizerMixin {
     @Unique
     private final LongOpenHashSet papi$queuedPositions = new LongOpenHashSet();
 
+    @Unique
+    private int papi$peakQueueSize;
+
     @Inject(method = "saveAllChunks", at = @At("HEAD"), cancellable = true)
     private void papi$onSaveAllChunks(boolean flushStorage, CallbackInfo ci) {
         if (flushStorage || !PapiAutosaveState.isInAutoSave()) {
             this.papi$autosaveQueue.clear();
             this.papi$queuedPositions.clear();
+            this.papi$peakQueueSize = 0;
             return;
         }
         ci.cancel();
@@ -58,6 +72,10 @@ public abstract class ChunkMapAutosaveOptimizerMixin {
                 }
             }
         }
+        int qSize = this.papi$autosaveQueue.size();
+        if (qSize > this.papi$peakQueueSize) {
+            this.papi$peakQueueSize = qSize;
+        }
     }
 
     @Inject(method = "tick()V", at = @At("TAIL"))
@@ -68,11 +86,16 @@ public abstract class ChunkMapAutosaveOptimizerMixin {
         if (this.level.noSave()) {
             this.papi$autosaveQueue.clear();
             this.papi$queuedPositions.clear();
+            this.papi$peakQueueSize = 0;
             return;
         }
 
         long now = Util.getMillis();
-        int maxPerTick = PapiMsptController.getAutosaveBatchSize(this.papi$autosaveQueue.size());
+        int currentSize = this.papi$autosaveQueue.size();
+        if (currentSize > this.papi$peakQueueSize) {
+            this.papi$peakQueueSize = currentSize;
+        }
+        int maxPerTick = PapiMsptController.getAutosaveBatchSize(currentSize);
         int processed = 0;
         while (!this.papi$autosaveQueue.isEmpty() && processed < maxPerTick) {
             long pos = this.papi$autosaveQueue.dequeueLong();
@@ -89,8 +112,11 @@ public abstract class ChunkMapAutosaveOptimizerMixin {
             }
         }
         if (this.papi$autosaveQueue.isEmpty()) {
-            this.papi$autosaveQueue.trim();
-            this.papi$queuedPositions.trim();
+            if (this.papi$peakQueueSize > PAPI$TRIM_PEAK_THRESHOLD) {
+                this.papi$autosaveQueue.trim();
+                this.papi$queuedPositions.trim();
+            }
+            this.papi$peakQueueSize = 0;
         }
     }
 }

@@ -1,5 +1,7 @@
 package net.ashpapi.papioptimization.mixin.worldgen;
 
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.levelgen.densityfunction.DensityBuffer;
@@ -11,7 +13,6 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(value = PerlinNoise.class, priority = 1500)
 public abstract class PerlinNoiseFastMixin extends GradientNoise {
@@ -49,7 +50,7 @@ public abstract class PerlinNoiseFastMixin extends GradientNoise {
 
     @Unique
     private static float papi$smoothstep(float t) {
-        return t * t * t * Math.fma(t, Math.fma(t, 6.0F, -15.0F), 10.0F);
+        return t * t * t * (t * (t * 6.0F - 15.0F) + 10.0F);
     }
 
     @Unique
@@ -67,11 +68,11 @@ public abstract class PerlinNoiseFastMixin extends GradientNoise {
         return lxy0 + sz * (lxy1 - lxy0);
     }
 
-    @Inject(method = "sampleAndLerp", at = @At("HEAD"), cancellable = true)
-    private void papi$fastSampleAndLerp(
+    @WrapMethod(method = "sampleAndLerp")
+    private float papi$fastSampleAndLerp(
         int x, int y, int z,
         float dx, float dy, float dz, float dySmooth,
-        CallbackInfoReturnable<Float> cir
+        Operation<Float> original
     ) {
         byte[] p = this.perms;
         int pX0 = p[x & 255] & 255;
@@ -98,7 +99,7 @@ public abstract class PerlinNoiseFastMixin extends GradientNoise {
         float sy = papi$smoothstep(dySmooth);
         float sz = papi$smoothstep(dz);
 
-        cir.setReturnValue(papi$lerp3(sx, sy, sz, g000, g100, g010, g110, g001, g101, g011, g111));
+        return papi$lerp3(sx, sy, sz, g000, g100, g010, g110, g001, g101, g011, g111);
     }
 
     @Inject(method = "addToVolume", at = @At("HEAD"), cancellable = true)
@@ -109,6 +110,7 @@ public abstract class PerlinNoiseFastMixin extends GradientNoise {
     ) {
         byte[] p = this.perms;
         float[] g = PAPI$FLAT_GRAD;
+        float[] out = ((DensityBufferAccessor) buffer).papi$getValues();
         double offX = this.offsetX;
         double offY = this.offsetY;
         double offZ = this.offsetZ;
@@ -197,7 +199,8 @@ public abstract class PerlinNoiseFastMixin extends GradientNoise {
                     float g011 = xz011 + gy011 * dy1;
                     float g111 = xz111 + gy111 * dy1;
 
-                    buffer.addTo(index++, amplitude * papi$lerp3(sx, sy, sz, g000, g100, g010, g110, g001, g101, g011, g111));
+                    out[index] += amplitude * papi$lerp3(sx, sy, sz, g000, g100, g010, g110, g001, g101, g011, g111);
+                    index++;
                 }
             }
         }

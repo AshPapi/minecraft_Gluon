@@ -25,12 +25,23 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(value = SectionCompiler.class, priority = 1500)
 public abstract class SectionCompilerEbeMixin {
 
-    static {
-        PapiEbeRuntime.markSectionCompilerHooked();
-    }
-
     @Shadow
     private boolean cutoutLeaves;
+
+    @Inject(
+        method = "compile(Lnet/minecraft/core/SectionPos;Lnet/minecraft/client/renderer/chunk/RenderSectionRegion;Lcom/mojang/blaze3d/vertex/VertexSorting;Lnet/minecraft/client/renderer/SectionBufferBuilderPack;Ljava/util/List;)Lnet/minecraft/client/renderer/chunk/SectionCompiler$Results;",
+        at = @At("HEAD")
+    )
+    private void papi$markVanillaSectionCompilerHooked(
+            SectionPos sectionPos,
+            RenderSectionRegion region,
+            com.mojang.blaze3d.vertex.VertexSorting vertexSorting,
+            net.minecraft.client.renderer.SectionBufferBuilderPack buffers,
+            java.util.List<net.neoforged.neoforge.client.event.AddSectionGeometryEvent.AdditionalSectionRenderer> additionalRenderers,
+            CallbackInfoReturnable<SectionCompiler.Results> cir
+    ) {
+        PapiEbeRuntime.markSectionCompilerHooked();
+    }
 
     @Inject(
         method = "compile(Lnet/minecraft/core/SectionPos;Lnet/minecraft/client/renderer/chunk/RenderSectionRegion;Lcom/mojang/blaze3d/vertex/VertexSorting;Lnet/minecraft/client/renderer/SectionBufferBuilderPack;Ljava/util/List;)Lnet/minecraft/client/renderer/chunk/SectionCompiler$Results;",
@@ -57,7 +68,7 @@ public abstract class SectionCompilerEbeMixin {
             return;
         }
         BlockEntity be = region.getBlockEntity(blockPos);
-        if (be == null) {
+        if (be == null || !PapiEbeRuntime.isBakeableBlockEntity(be, blockState)) {
             return;
         }
         PapiEbeDynamicTracker tracker = (be instanceof PapiEbeDynamicTracker t) ? t : null;

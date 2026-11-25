@@ -1,40 +1,51 @@
 package net.ashpapi.papioptimization.mixin.render;
 
 import net.ashpapi.papioptimization.client.BlockEntityTypeRendererCache;
+import net.ashpapi.papioptimization.config.PapiConfig;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.api.distmarker.OnlyIn;
+import org.jspecify.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 
-@net.neoforged.api.distmarker.OnlyIn(net.neoforged.api.distmarker.Dist.CLIENT)
+@OnlyIn(Dist.CLIENT)
 @Mixin(value = BlockEntityType.class, priority = 1500)
 public abstract class BlockEntityTypeMixin implements BlockEntityTypeRendererCache {
 
     @Unique
-    private BlockEntityRenderer<?, ?> papi$cachedRenderer;
+    private volatile @Nullable Object papi$rendererSlot;
 
     @Unique
-    private boolean papi$rendererInitialized = false;
+    private volatile byte papi$cullWhitelistState;
 
     @Override
-    public BlockEntityRenderer<?, ?> papi$getRenderer() {
-        return this.papi$cachedRenderer;
+    public @Nullable Object papi$getRendererSlot() {
+        return this.papi$rendererSlot;
     }
 
     @Override
-    public void papi$setRenderer(BlockEntityRenderer<?, ?> renderer) {
-        this.papi$cachedRenderer = renderer;
-        this.papi$rendererInitialized = true;
+    public void papi$setRenderer(@Nullable BlockEntityRenderer<?, ?> renderer) {
+        this.papi$rendererSlot = renderer != null ? renderer : PAPI$NO_RENDERER;
     }
 
     @Override
-    public boolean papi$isRendererInitialized() {
-        return this.papi$rendererInitialized;
+    public void papi$resetWhitelistCache() {
+        this.papi$cullWhitelistState = 0;
     }
 
     @Override
-    public void papi$resetRendererCache() {
-        this.papi$cachedRenderer = null;
-        this.papi$rendererInitialized = false;
+    public boolean papi$isCullWhitelisted() {
+        byte st = this.papi$cullWhitelistState;
+        if (st != 0) {
+            return st == 2;
+        }
+        Identifier id = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey((BlockEntityType<?>) (Object) this);
+        boolean wl = id != null && PapiConfig.blockEntityCullWhitelistSet().contains(id.toString());
+        this.papi$cullWhitelistState = (byte) (wl ? 2 : 1);
+        return wl;
     }
 }
